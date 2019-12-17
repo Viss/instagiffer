@@ -3858,8 +3858,8 @@ class GifApp:
         widget.update_idletasks()
         width  = widget.winfo_width()
         height = widget.winfo_height()
-        x      = (widget.winfo_screenwidth() / 2) - (width / 2)
-        y      = (widget.winfo_screenheight() / 2) - (height / 2)
+        x      = (widget.winfo_screenwidth() // 2) - (width // 2)
+        y      = (widget.winfo_screenheight() // 2) - (height // 2)
         widget.geometry('{0}x{1}+{2}+{3}'.format(width, height, x, y))
 
     def InitializeCropTool(self):

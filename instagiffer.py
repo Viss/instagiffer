@@ -3,7 +3,7 @@
 #
 # Copyright (c) 2013-2019 Exhale Software Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 # 1. Redistributions of source code must retain the above copyright
@@ -31,12 +31,63 @@
 #
 ###############################################################################
 
+# pylint: disable=too-many-lines
 """instagiffer.py: The easy way to make GIFs"""
 
+import base64
+import hashlib
+import json
+import urllib.request
+import urllib.parse
+import urllib.error
+import sys
+import os
+import shutil
+import subprocess
+import re
+import glob
+import uuid
+import time
+import logging
+import random
+import locale
+import shlex
+import traceback
+from random import randrange
+from os.path import expanduser
+from configparser import SafeConfigParser, RawConfigParser
+from threading  import Thread
+from queue import Queue
+from fractions import gcd
+
+# TK
+import tkinter.ttk
+import tkinter.font
+import tkinter.messagebox
+from   tkinter import *
+from   tkinter.colorchooser import *
+from   tkinter.filedialog import askopenfilename, askdirectory, asksaveasfilename
+
+
+# PIL
+import PIL
+from   PIL import Image, ImageTk, ImageFilter, ImageDraw
+
+
+# Win32 specific includes
+try:
+    import winsound
+    import win32api
+     # Windows uses the PIL ImageGrab module for screen capture
+    from PIL import ImageGrab
+except ImportError:
+    pass
+
+
 # Only use odd-numbered minor revisions for pre-release builds
-INSTAGIFFER_VERSION="1.77"
+INSTAGIFFER_VERSION = "1.77"
 # If not a pre-release set to "", else set to "pre-X"
-INSTAGIFFER_PRERELEASE=""
+INSTAGIFFER_PRERELEASE = ""
 
 __author__       = "Justin Todd"
 __copyright__    = "Copyright 2013-2019, Exhale Software Inc."
@@ -48,80 +99,30 @@ __version__      = INSTAGIFFER_VERSION+INSTAGIFFER_PRERELEASE
 __release__      = True  # If this is false, bindep output, and info-level statements will be displayed stdout
 __changelogUrl__ = "http://instagiffer.com/post/146636589471/instagiffer-175-macpc"
 __faqUrl__       = "http://www.instagiffer.com/post/51787746324/frequently-asked-questions"
- 
-import hashlib
-import argparse
-import base64
-import json
-import urllib
-import urllib2
-import sys
-import os
-import shutil
-import subprocess
-import re
-import glob
-import uuid
-import time
-import itertools
-import logging
-import random 
-import locale
-import shlex
-import traceback
-import codecs
-from   random import randrange
-from   os.path import expanduser
-from   ConfigParser import SafeConfigParser, RawConfigParser
-from   threading  import Thread
-from   Queue import Queue, Empty
-from   fractions import gcd
 
-# PIL
-import PIL
-from   PIL import Image, ImageTk, ImageFilter, ImageDraw
-
-# TK
-import ttk
-import tkFont
-import tkMessageBox
-from   Tkinter import *
-from   tkColorChooser import *
-from   tkFileDialog import askopenfilename, askdirectory, asksaveasfilename
-
-
-# Win32 specific includes
-if sys.platform == 'win32':
-    import winsound
-    import win32api
-     # Windows uses the PIL ImageGrab module for screen capture
-    from PIL import ImageGrab
-
-# Return true if running on a MAC
-#
 
 def ImAMac():
+    """Return true if running on a MAC"""
     return sys.platform == 'darwin'
 
-#
-# Return true if running on a PC
-#
 
 def ImAPC():
+    """Return true if running on windows"""
     return sys.platform == 'win32'
 
-#
-# Open a file in the application associated with this file extension
-#
 
 def OpenFileWithDefaultApp(fileName):
+    """Open a file in the application associated with this file extension"""
     if sys.platform == 'darwin':
         os.system('open ' + fileName)
     else:
         try:
             os.startfile(fileName)
         except:
-            tkMessageBox.showinfo("Unable to open!", "I wasn't allowed to open '" + fileName + "'. You will need to perform this task manually.")
+            msg = "Unable to open! "
+            msg += f"I wasn't allowed to open '{fileName}'. "
+            msg += "You will need to perform this task manually."
+            tkinter.messagebox.showinfo(msg)
 
 def GetFileExtension(filename):
     try:
@@ -190,8 +191,8 @@ def ReScale(val, oldScale, newScale):
     NewMax   = newScale[1]
     NewMin   = newScale[0]
     OldValue = val
-    OldRange = (OldMax - OldMin)  
-    NewRange = (NewMax - NewMin)  
+    OldRange = (OldMax - OldMin)
+    NewRange = (NewMax - NewMin)
     NewValue = (((OldValue - OldMin) * NewRange) / OldRange) + NewMin
     return NewValue
 
@@ -203,7 +204,7 @@ def norecurse(func):
     func.called = False
     def f(*args, **kwargs):
         if func.called:
-            print "Recursion!"
+            print("Recursion!")
             return False
         else:
             func.called = True
@@ -283,7 +284,7 @@ def DefaultOutputHandler(stdoutLines, stderrLines, cmd):
         youtubeDlSearch = re.search(r'\[download\]\s+([0-9\.]+)% of', outData, re.MULTILINE)
         if youtubeDlSearch:
             i = int(float(youtubeDlSearch.group(1)))
-            s = "Downloaded %d%%..." % (i)   
+            s = "Downloaded %d%%..." % (i)
 
         # ffmpeg frame extraction progress
         ffmpegSearch = re.search(r'frame=.+time=(\d+:\d+:\d+\.\d+)', outData, re.MULTILINE)
@@ -317,7 +318,7 @@ def EnqueueProcessOutput(streamId, inStream, outQueue):
 # Prompt User
 #
 def NotifyUser(title, msg):
-    return tkMessageBox.showinfo(title, msg)
+    return tkinter.messagebox.showinfo(title, msg)
 
 #
 # Run a process
@@ -392,7 +393,7 @@ def RunProcess(cmd, callback = None, returnOutput = False, callBackFinalize = Tr
             #    pass
 
         # Caller wants to abort!
-        if callback is not None and callback(percentDoneInt, statusStr) == False:       
+        if callback is not None and callback(percentDoneInt, statusStr) == False:
             try:
                 pipe.terminate()
                 pipe.kill()
@@ -482,7 +483,7 @@ def CreateWorkingDir(conf):
 
 
 #
-# For language auto-fix 
+# For language auto-fix
 #
 def GetFailSafeDir(conf, badPath):
     path = badPath
@@ -490,7 +491,7 @@ def GetFailSafeDir(conf, badPath):
     if ImAPC():
         goodPath = conf.GetParam('paths', 'failSafeDir')
         if not os.path.exists(goodPath):
-            if tkMessageBox.askyesno("Automatically Fix Language Issue?", "It looks like you are using a non-latin locale. Can Instagiffer create directory " + goodPath + " to solve this issue?"):
+            if tkinter.messagebox.askyesno("Automatically Fix Language Issue?", "It looks like you are using a non-latin locale. Can Instagiffer create directory " + goodPath + " to solve this issue?"):
                 err = False
                 try:
                     os.makedirs(goodPath)
@@ -503,7 +504,7 @@ def GetFailSafeDir(conf, badPath):
                     err = True
 
                 if err:
-                    tkMessageBox.showinfo("Error Fixing Language Issue", "Failed to create '" + goodPath + "'. Please make this directory manually in Windows Explorer, then restart Instagiffer.")
+                    tkinter.messagebox.showinfo("Error Fixing Language Issue", "Failed to create '" + goodPath + "'. Please make this directory manually in Windows Explorer, then restart Instagiffer.")
         else:
             path = goodPath
 
@@ -545,7 +546,7 @@ class InstaConfig:
             return True
 
     def GetParam(self, category, key):
-        retVal = u""
+        retVal = ""
 
         if self.ParamExists(category, key):
             retVal = self.config._sections[category.lower()][key.lower()]
@@ -555,7 +556,7 @@ class InstaConfig:
         if isinstance(retVal, bool) or isinstance(retVal, int):
             return retVal
 
-        # We are dealing with strings or unicode 
+        # We are dealing with strings or unicode
 
         # Expand variables
         try:
@@ -564,8 +565,8 @@ class InstaConfig:
             pass
 
         # Config file encoding is UTF-8
-        if not isinstance(retVal, unicode):
-            retVal = unicode(retVal, 'utf-8')
+        if not isinstance(retVal, str):
+            retVal = str(retVal, 'utf-8')
 
 
         if retVal.startswith(";"):
@@ -573,7 +574,7 @@ class InstaConfig:
 
         return retVal
 
-    # 
+    #
     def GetParamBool(self, category, key):
         val = self.GetParam(category, key)
         boolVal = True
@@ -591,7 +592,7 @@ class InstaConfig:
 
     #
     def SetParam(self, category, key, value):
-        
+
         try:
             current = self.config._sections[category.lower()][key.lower()]
         except KeyError:
@@ -606,7 +607,7 @@ class InstaConfig:
     def SetParamBool(self, category, key, val):
         boolVal = True
         if isinstance(val, int):
-            boolVal = not (val == 0)        
+            boolVal = not (val == 0)
         elif val == None:
             boolVal = False
         elif val == "":
@@ -626,7 +627,7 @@ class InstaConfig:
             logging.info("%s:" % (str(cat)))
 
             for k in self.config._sections[cat]:
-                dumpStr = u"  - " + k + u": "
+                dumpStr = "  - " + k + ": "
                 val = self.GetParam(cat, k)
 
                 if isinstance(val, bool):
@@ -686,15 +687,15 @@ class ImagemagickFont:
                     self.fonts[fontFamily][overallStyle] = fontId
 
     def GetFontCount(self):
-        return len(self.fonts.keys())
+        return len(list(self.fonts.keys()))
 
     def GetFamilyList(self):
-        ret = self.fonts.keys()
+        ret = list(self.fonts.keys())
         ret.sort()
         return tuple(ret)
 
     def GetFontAttributeList(self, fontFamily):
-        ret = self.fonts[fontFamily].keys()
+        ret = list(self.fonts[fontFamily].keys())
         ret.sort(reverse=True)
         return tuple(ret)
 
@@ -865,7 +866,7 @@ class AnimatedGif:
         fname, fext = os.path.splitext(filename)
         if not fext or len(fext) == 0 or str(fext.lower()) != '.url':
             return filename
-    
+
         # Windows .URL file format is compatible with built-in ConfigParser class.
         config = RawConfigParser()
         try:
@@ -877,7 +878,7 @@ class AnimatedGif:
         if config.has_option('InternetShortcut', 'url'):
             return config.get('InternetShortcut', 'url').strip('"')
         # If there is none, return the BASEURL= value from the [DEFAULT] section.
-        if 'baseurl' in config.defaults().keys():
+        if 'baseurl' in list(config.defaults().keys()):
             return config.defaults()['baseurl'].strip('"')
         else:
             return filename
@@ -940,7 +941,7 @@ class AnimatedGif:
                     self.callback(True)
                     self.FatalError("Ran out of memory during screen capture. Try recording a smaller area, or decreasing your duration.")
                     return False
-                
+
                 imgDimensions = img.size
 
                 if showCursor:
@@ -992,7 +993,7 @@ class AnimatedGif:
                         frameCount += 1
                     else:
                         logging.error("Capture file " + capPath + " was not saved to disk for some reason")
-                
+
                 # Trim the list to the actual size
                 missingCount = len(self.imageSequence) - frameCount
                 if missingCount != 0:
@@ -1016,7 +1017,7 @@ class AnimatedGif:
                     )
 
                 self.imageSequence[i] = newFileName
-       
+
                 if not RunProcess(cmdConvert, self.callback, False, False):
                     self.FatalError("Unable to crop screen capture frame: " + os.path.basename(self.imageSequence[x]))
 
@@ -1040,7 +1041,7 @@ class AnimatedGif:
         elif not os.path.exists(self.conf.GetParam('paths','youtubedl')):
             self.FatalError("Youtube-dl not found")
         # elif not os.path.exists(self.conf.GetParam('paths','gifsicle')):
-        #     self.FatalError("gifsicle not found")            
+        #     self.FatalError("gifsicle not found")
         elif self.videoPath is not None and not os.path.exists(self.videoPath):
             self.FatalError("Local video file '" + self.videoPath + "' does not exist")
 
@@ -1102,7 +1103,7 @@ class AnimatedGif:
             files = self.GetResizedImageList()
         else:
             files = self.GetExtractedImageList()
-        
+
         logging.info("Export frames %d to %d" % (start,end))
         x = 1
 
@@ -1122,13 +1123,13 @@ class AnimatedGif:
 
             self.callback(False)
             x += 1
-  
+
         self.callback(True)
         return True
- 
+
     # If manual deletions are made, the enumumeration gets messed up, which screws up the import
     def ReEnumerateExtractedFrames(self):
-        if not self.ExtractedImagesExist(): 
+        if not self.ExtractedImagesExist():
             return True
         return self.ReEnumeratePngFrames(self.GetExtractedImagesDir(), self.GetExtractedImageList())
 
@@ -1162,7 +1163,7 @@ class AnimatedGif:
     def ReverseFrames(self):
          # Get current image list
         currentImgList = self.GetExtractedImageList()
-        numImgs        = len(currentImgList)     
+        numImgs        = len(currentImgList)
 
         def GetOrigName(idx):
             return "%simage%04d.png" % (self.GetExtractedImagesDir() + os.sep, idx)
@@ -1198,7 +1199,7 @@ class AnimatedGif:
             self.FatalError("Couldn't create blank image!")
 
         return True
-        
+
 
     def CreateCrossFade(self, start, end):
         totCount = self.GetNumFrames()
@@ -1252,7 +1253,7 @@ class AnimatedGif:
                 os.remove(fb)
             except:
                 self.DeleteExtractedImages()
-                self.FatalError("Couldn't delete frame: " + fb)               
+                self.FatalError("Couldn't delete frame: " + fb)
 
         if not self.ReEnumerateExtractedFrames():
             self.FatalError("Failed to re-enumerate frames")
@@ -1287,12 +1288,12 @@ class AnimatedGif:
         for x in range(0, len(currentImgList)):
             toFile   = "%scurrent_image%04d.png" % (self.GetExtractedImagesDir(), x + 1)
             logging.info("Temporarily rename image %s to %s" % (currentImgList[x], toFile))
-            
+
             if currentImgList[x] in importedImgList:
                 shutil.copy(currentImgList[x], toFile)
             else:
                 shutil.move(currentImgList[x], toFile)
-            
+
             currentImgList[x] = toFile
 
         # Temporarily rename and resize imported images
@@ -1424,7 +1425,7 @@ class AnimatedGif:
                 # else:
                 #     fileTs = os.stat(fileName).st_mtime
                 #     if fileTs < largestTs:
-                          # broken sequence                    
+                          # broken sequence
                 #     else:
                 #         largestTs = fileTs
 
@@ -1445,7 +1446,7 @@ class AnimatedGif:
         logging.debug("Stack:")
         for line in traceback.format_stack():
             logging.error(line.strip())
-        
+
         logging.debug(self.conf)
         self.callback(True)
 
@@ -1493,14 +1494,14 @@ class AnimatedGif:
 
         if not os.path.exists(mediaPath):
             self.FatalError("'" + mediaPath + "' does not exist!")
-  
+
         stdout, stderr = RunProcess('"' + self.conf.GetParam('paths','ffmpeg') + '" -i "' + CleanupPath(mediaPath) + '"', None, True)
 
         pattern = re.compile(r'Stream.*Video.* ([0-9]+)x([0-9]+)')
         match   = pattern.search(stderr)
 
         if match:
-                w, h = map(int, match.groups()[0:2])
+                w, h = list(map(int, match.groups()[0:2]))
                 self.videoWidth = w
                 self.videoHeight = h
         else:
@@ -1511,11 +1512,11 @@ class AnimatedGif:
         match   = pattern.search(stderr)
 
         if match:
-            sarX, sarY, darX, darY = map(int, match.groups()[0:4])
-            
+            sarX, sarY, darX, darY = list(map(int, match.groups()[0:4]))
+
             rDar = darX/float(darY)
             rSar = sarX/float(sarY)
-            
+
             if rSar != 1.0 and rDar != rSar:
                 logging.info("Storage aspect ratio (%.2f) differs from display aspect ratio (%.2f)" % (rSar, rDar))
                 self.videoWidth = self.videoHeight * rDar
@@ -1613,7 +1614,7 @@ class AnimatedGif:
         return self.frameDir + os.sep
 
     def GetExtractedImagesLastModifiedTs(self):
-        if self.ExtractedImagesExist(): 
+        if self.ExtractedImagesExist():
             largestTimestamp = os.stat(self.GetExtractedImagesDir()).st_mtime
             files            = glob.glob(self.GetExtractedImagesDir() + '*')
 
@@ -1718,24 +1719,24 @@ class AnimatedGif:
             return None
 
         data = {
-            'key': __imgurcid__, 
+            'key': __imgurcid__,
             'image': b64Image,
             'type': 'base64',
             'name': 'Instagiffer.gif',
             'title': 'Created and uploaded using Instagiffer'
         }
 
-        req = urllib2.Request("https://api.imgur.com/3/upload.json", urllib.urlencode(data))
+        req = urllib.request.Request("https://api.imgur.com/3/upload.json", urllib.parse.urlencode(data))
         req.add_header('Authorization', 'Client-ID ' +  __imgurcid__)
 
         try:
-            response = urllib2.urlopen(req)
+            response = urllib.request.urlopen(req)
         except:
             return None
 
         response = json.loads(response.read())
 
-        imgUrl = str(response[u'data'][u'link'])
+        imgUrl = str(response['data']['link'])
         logging.info("Imgur URL: " + imgUrl)
 
         if self.rootWindow is not None:
@@ -1812,7 +1813,7 @@ class AnimatedGif:
         if os.path.exists(self.audioClipFile):
             return self.audioClipFile
         else:
-            return None 
+            return None
 
     def ExtractAudioClip(self):
         audioPath    = self.conf.GetParam('audio', 'path')
@@ -1828,7 +1829,7 @@ class AnimatedGif:
         except:
             pass
 
-        cmdExtractImages = u'"%s" -y -v verbose -ss %s -t %.1f -i "%s" -af "volume=%.1f" "%s"' % \
+        cmdExtractImages = '"%s" -y -v verbose -ss %s -t %.1f -i "%s" -af "volume=%.1f" "%s"' % \
             (
                 self.conf.GetParam('paths', 'ffmpeg'),
                 startTimeStr,
@@ -1892,7 +1893,7 @@ class AnimatedGif:
         elif self.downloadQuality == 'Medium':
             maxHeight = 360
         elif self.downloadQuality == 'High':
-            maxHeight = 720            
+            maxHeight = 720
         elif self.downloadQuality == 'Highest':
             maxHeight = 1080
 
@@ -1910,7 +1911,7 @@ class AnimatedGif:
 
         # Don't specify
         if self.downloadQuality == 'None':
-            fmtStr = "" 
+            fmtStr = ""
 
         cmdVideoDownload = \
             '"' + self.conf.GetParam('paths','youtubedl') + '"' \
@@ -2001,7 +2002,7 @@ class AnimatedGif:
             else:
                 verbosityLevel = "verbose" #error"
 
-            cmdExtractImages = u'"%s" -v %s -sn -t %.1f -ss %s -i "%s" -r %s "%simage%%04d.png"' % \
+            cmdExtractImages = '"%s" -v %s -sn -t %.1f -ss %s -i "%s" -r %s "%simage%%04d.png"' % \
                 (
                     self.conf.GetParam('paths', 'ffmpeg'),
                     verbosityLevel,
@@ -2058,12 +2059,12 @@ class AnimatedGif:
         if doDeglitch:
             #self.callback(False, "De-glitch...")
             deleteCount = 2 * int(self.conf.GetParam('rate', 'framerate'))
-            
+
             logging.info("Deglitch. Remove frames 1 to %d" % deleteCount )
 
             for x in range(1, deleteCount + 1):
                 framePath  = self.frameDir + os.sep
-                framePath += u'image%04d.png' % (x)
+                framePath += 'image%04d.png' % (x)
 
                 if not os.path.exists(framePath):
                     self.FatalError("De-glitch failed. Frame not found: " + framePath)
@@ -2171,7 +2172,7 @@ class AnimatedGif:
         xNudge   = int(self.conf.GetParam(layerId, 'xNudge'))
         yNudge   = int(self.conf.GetParam(layerId, 'yNudge'))
 
-        #-compose dissolve -define compose:args=%d -composite 
+        #-compose dissolve -define compose:args=%d -composite
         cmdProcImage += ' ( "%s"  -resize %d%% ) ' % (imgPath, resize)
         cmdProcImage += ' -gravity %s -geometry %+d%+d -compose dissolve -define compose:args=%d -composite ' % \
                           (gravity, xNudge, yNudge, opacity)
@@ -2186,14 +2187,14 @@ class AnimatedGif:
         if len(self.conf.GetParam(captionId, 'text')) > 0:
             fromFrame = int(self.conf.GetParam(captionId, 'frameStart'))
             toFrame   = int(self.conf.GetParam(captionId, 'frameEnd'))
-    
+
             if frameIdx < fromFrame or frameIdx > toFrame:
                return ""
 
         else:
             return ""
 
-        # tricky please 
+        # tricky please
         if self.conf.GetParamBool(captionId, 'applyFx') != beforeFXchain:
             return ""
 
@@ -2277,7 +2278,7 @@ class AnimatedGif:
 
             animationEnv = [0.0] * (fromFrame-1)
             animationEnv += patternEnv
-            animationEnv += [0.0] * (self.GetNumFrames() - len(animationEnv))            
+            animationEnv += [0.0] * (self.GetNumFrames() - len(animationEnv))
 
             # Animation type: Blink
             if self.conf.GetParam(captionId, 'animationType').lower() == 'blink':
@@ -2348,7 +2349,7 @@ class AnimatedGif:
         if fontId == None:
             self.FatalError("Unable to find font: %s (%s) " % (fontFamily, fontStyle))
 
-        cmdProcImage += "( +clone -alpha transparent -font %s -pointsize %d -gravity %s " % (fontId, fontSize, gravity)                        
+        cmdProcImage += "( +clone -alpha transparent -font %s -pointsize %d -gravity %s " % (fontId, fontSize, gravity)
 
         interlineSpacing=int(self.conf.GetParam(captionId, 'interlineSpacing'))
 
@@ -2386,11 +2387,11 @@ class AnimatedGif:
 
 
     def CropAndResize(self, argFrameIdx=None):
-        files = glob.glob(self.frameDir + os.sep + '*.png')        
+        files = glob.glob(self.frameDir + os.sep + '*.png')
         files.sort()
 
         origWidth  = self.GetVideoWidth()
-        origHeight = self.GetVideoHeight() 
+        origHeight = self.GetVideoHeight()
 
         cinemagraphKeyFrame = int(self.conf.GetParam('blend', 'cinemagraphKeyFrameIdx'))
         keyframeFile = files[cinemagraphKeyFrame]
@@ -2474,7 +2475,7 @@ class AnimatedGif:
         if previewFrameIdx >= 0:
             genPreview = True
             frameIdx   = previewFrameIdx + 1
-            files      = [ self.GetResizedImageList(frameIdx) ] 
+            files      = [ self.GetResizedImageList(frameIdx) ]
             logging.info("Processing frame %d" % (frameIdx))
         else:
             genPreview = False
@@ -2507,9 +2508,9 @@ class AnimatedGif:
             # Pre Filter fonts
             for x in range(1, 30):
                 cmdProcImage += self.CaptionProcessing(x, frameIdx, True, borderOffset)
- 
+
             # Pre Filter blits
-            for x in range(1, 2): 
+            for x in range(1, 2):
                 cmdProcImage += self.BlitImage(x, True)
 
             #
@@ -2573,15 +2574,15 @@ class AnimatedGif:
 
             # Border
             if borderOffset > 0:
-                color         = self.conf.GetParam('effects', 'borderColor') 
+                color         = self.conf.GetParam('effects', 'borderColor')
                 thickness     = borderOffset
-                cmdProcImage += '-bordercolor "%s" -border %d ' % (color, thickness)     
+                cmdProcImage += '-bordercolor "%s" -border %d ' % (color, thickness)
 
 
 
             # Enhancement: Dithering
 
-            # misc size optimization -normalize 
+            # misc size optimization -normalize
             if self.conf.GetParamBool('effects', 'sharpen'):
                 sharpAmount = int(self.conf.GetParam('effects','sharpenAmount'))
                 scaledVal   = ReScale(sharpAmount, (0,100), (0,5))
@@ -2603,7 +2604,7 @@ class AnimatedGif:
                 cmdProcImage += self.CaptionProcessing(x, frameIdx, False, borderOffset)
 
             # Post Filter blits
-            for x in range(1, 2): 
+            for x in range(1, 2):
                 cmdProcImage += self.BlitImage(x, False)
 
             #
@@ -2617,7 +2618,7 @@ class AnimatedGif:
                 cmdProcImage += ' -depth 8 -colors %s ' % (self.conf.GetParam('color', 'numcolors'))
 
 
-            cmdProcImage += ' -format %s ' % (self.GetIntermediaryFrameFormat()) 
+            cmdProcImage += ' -format %s ' % (self.GetIntermediaryFrameFormat())
             cmdProcImage += '"%s" ' % (outputFileName)
 
             if not RunProcess(cmdProcImage, self.callback, False, False):
@@ -2628,7 +2629,7 @@ class AnimatedGif:
 
             frameIdx += 1
         return True
- 
+
     # Generate final output. Returns size of generated GIF in bytes
     def Generate(self, skipProcessing=False):
         err      = ""
@@ -2653,7 +2654,7 @@ class AnimatedGif:
                 cmdCreateGif += ' -alpha set -dispose %d '  % (int(self.conf.GetParamBool('blend', 'cinemagraphKeyFrameIdx')))
             else:
                 cmdCreateGif += '-layers optimizePlus '
-            
+
             # Input files
             cmdCreateGif += '"' + self.processedDir + os.sep + '*.' + self.GetIntermediaryFrameFormat() + '" '
             cmdCreateGif += '"' + fileName + '"'
@@ -2675,10 +2676,10 @@ class AnimatedGif:
             # - shortest Finish encoding when the shortest input stream ends.
             # - h.264 format
             # - use null audio
-            # 
+            #
             #"e:\ffmpeg\ffmpeg.exe" -r 1/5 -start_number 0 -i "E:\images\01\padlock%3d.png" -c:v libx264 -r 30 -pix_fmt yuv420p e:\out.mp4
 
-            cmdConvertToVideo = u'"%s" -v verbose -y -r %.2f -start_number 0 -i "%simage%%04d.%s" ' % \
+            cmdConvertToVideo = '"%s" -v verbose -y -r %.2f -start_number 0 -i "%simage%%04d.%s" ' % \
                 (
                     self.conf.GetParam('paths', 'ffmpeg'),
                     fps,
@@ -2709,7 +2710,7 @@ class AnimatedGif:
                 cmdConvertToVideo += ' -f lavfi -i aevalsrc=0 '
 
             # video
-            if self.GetFinalOutputFormat() in [ 'mp4' ]: 
+            if self.GetFinalOutputFormat() in [ 'mp4' ]:
                 cmdConvertToVideo += ' -c:v libx264 -crf 18 -preset slow -vf "scale=trunc(in_w/2)*2:trunc(in_h/2)*2",setsar=1:1 -pix_fmt yuv420p '
             elif self.GetFinalOutputFormat() in ['webm']:
                 cmdConvertToVideo += ' -c:v libvpx -crf 4 -b:v 312.5k -vf setsar=1:1 '
@@ -2722,7 +2723,7 @@ class AnimatedGif:
         else:
             self.FatalError("I don't know how to create %s files" % (self.GetFinalOutputFormat()))
 
-        if not os.path.exists(fileName) or os.path.getsize(fileName) == 0: 
+        if not os.path.exists(fileName) or os.path.getsize(fileName) == 0:
             logging.error(err)
             self.FatalError("Failed to create %s :( " % (self.GetFinalOutputFormat()))
             return 0
@@ -2753,7 +2754,7 @@ class AnimatedGif:
             frameMs  = int(frameMs)
 
             cmdChangeGifTiming += ' ( -clone %d -set delay %d ) -swap %d,-1 +delete ' % (frameIdx, frameMs/10, frameIdx)
-        
+
         cmdChangeGifTiming += ' "%s"' % (fileName)
         (out, err) = RunProcess(cmdChangeGifTiming, self.callback, returnOutput=True)
 
@@ -2801,7 +2802,7 @@ class AnimatedGif:
         if modifyer is None:
             modifyer = int(self.conf.GetParam('rate','speedmodifier'))
 
-        timePerFrame      = 100//int(self.conf.GetParam('rate','framerate')) 
+        timePerFrame      = 100//int(self.conf.GetParam('rate','framerate'))
         speedModification = modifyer
         normalizedMod     = 1 + (abs(speedModification)-0)*(timePerFrame-0)/(10-0)
         gifFrameDelay     = timePerFrame
@@ -2862,23 +2863,23 @@ class AnimatedGif:
         if warnTumblr:
             # TODO: Verify. is this still a thing?
             #if w > 400 and w <= 500 and self.GetSize() >= 1000 * 1024 and self.GetSize() < 2000 * 1024:
-            #    warnings += "Tumblr Warning: If image width exceeds 400px, file size must be less than 1000kB\n\n" 
+            #    warnings += "Tumblr Warning: If image width exceeds 400px, file size must be less than 1000kB\n\n"
 
             if w > 540 or h > 750:
-                warnings += "Tumblr Warning: Image dimensions (" + str(w) + "x" + str(h) + ") are larger than the 500x750 maximum.\n\n" 
+                warnings += "Tumblr Warning: Image dimensions (" + str(w) + "x" + str(h) + ") are larger than the 500x750 maximum.\n\n"
 
             if self.GetSize() >= 2000 * 1024:
-                warnings += "Tumblr Warning: File size of " + str(int(self.GetSize()/1024)) + "kB is too large. It must be less than 2000kB. Try reducing animation smoothness, viewable region, frame size, or quality.  You can also try enabling black & white mode.\n\n" 
+                warnings += "Tumblr Warning: File size of " + str(int(self.GetSize()/1024)) + "kB is too large. It must be less than 2000kB. Try reducing animation smoothness, viewable region, frame size, or quality.  You can also try enabling black & white mode.\n\n"
 
 
         if warnImgur and self.GetSize() >= 2 * 1024 * 1024:
-            warnings += "Imgur Warning: File size of " + str(int(self.GetSize()/1024)) + "kB is too large. It must be less than 2MB unless you have a premium account, in which case, the max upload limit is 5MB.\n\n" 
+            warnings += "Imgur Warning: File size of " + str(int(self.GetSize()/1024)) + "kB is too large. It must be less than 2MB unless you have a premium account, in which case, the max upload limit is 5MB.\n\n"
 
 
         if warnTwitter:
             twitWarn = 0
             if self.GetSize() >= 5 * 1024 * 1024:
-                warnings += "Twitter Warning: File size of " + str(int(self.GetSize()/1024)) + "kB is too large. It must be less than 5MB.\n\n" 
+                warnings += "Twitter Warning: File size of " + str(int(self.GetSize()/1024)) + "kB is too large. It must be less than 5MB.\n\n"
                 twitWarn += 1
 
             if self.GetNumFrames() > 350:
@@ -2891,11 +2892,11 @@ class AnimatedGif:
                     warnings += "Twitter Warning: recommended dimensions are 506x506 or 506x253.\n\n"
 
         if warnGPlus and (w < 496 or h < 496 or aspectRatio != 1.0):
-            warnings += "Google Plus Warning: Recommended dimensions are 496x496.\n\n" 
+            warnings += "Google Plus Warning: Recommended dimensions are 496x496.\n\n"
 
         if warnInstagram:
             if w != 600 or h != 600:
-                warnings += "Instagram Warning: Recommended dimensions are 600x600.\n\n" 
+                warnings += "Instagram Warning: Recommended dimensions are 600x600.\n\n"
 
             if self.GetTotalRuntimeSec() > 15:
                 warnings += "Instagram Warning: Total runtime must not exceed 15 seconds.\n\n"
@@ -2935,7 +2936,7 @@ class GifPlayerWidget(Label):
 
         if self.delay < 2:
             self.delay = 100
-        
+
         self.LoadImages(False)
 
         Label.__init__(self, master, image=self.frames[0], padx=10, pady=10)
@@ -2964,7 +2965,7 @@ class GifPlayerWidget(Label):
 
         for imagePath in self.imgList:
             f  = open(imagePath, 'rb')
-            
+
             im = PIL.Image.open(f)
 
             if self.resizable and resize:
@@ -2972,7 +2973,7 @@ class GifPlayerWidget(Label):
 
             self.images.append(im)
             self.frames.append(ImageTk.PhotoImage(im))
-           
+
             f.close()
             del im
             del f
@@ -2987,7 +2988,7 @@ class GifPlayerWidget(Label):
         self.idx += 1
         if self.idx >= len(self.frames):
             self.idx = 0
-       
+
         # window was resized
         if self.resizable and (self.winfo_width() != self.currW or self.winfo_height() != self.currH):
             logging.info("%s %s => %d %d" %(self.currW, self.currH, self.winfo_width(), self.winfo_height()))
@@ -3018,10 +3019,10 @@ class GifApp:
         self.cancelRequest        = False
         self.tempDir              = None
         self.captions             = dict()
-        
+
 
         self.cropResizeChanges               = 0
-        self.captionChanges                  = 0       
+        self.captionChanges                  = 0
         self.miscGifChanges                  = 1
         self.frameTimingOrCompressionChanges = 0
         self.audioChanges                    = 0
@@ -3056,7 +3057,7 @@ class GifApp:
         self.OnSetLogoDefaults       = dict()
 
         #
-        # Load config 
+        # Load config
         #
 
         binPath       = os.path.dirname(os.path.realpath(sys.argv[0]))
@@ -3085,7 +3086,7 @@ class GifApp:
         #
         # Build GUI
         #
-    
+
         if __release__ == False:
             self.parent.title("Instagiffer - DEBUG MODE *******")
         else:
@@ -3110,10 +3111,10 @@ class GifApp:
             # correctly on netbooks
 
             # Font configuration
-            self.defaultFont     = tkFont.nametofont("TkDefaultFont")
+            self.defaultFont     = tkinter.font.nametofont("TkDefaultFont")
             self.defaultFont.configure        (family="Arial", size=8)
-            self.defaultFontBig  = tkFont.Font(family="Arial", size=9)
-            self.defaultFontTiny = tkFont.Font(family="Arial", size=7)
+            self.defaultFontBig  = tkinter.font.Font(family="Arial", size=9)
+            self.defaultFontTiny = tkinter.font.Font(family="Arial", size=7)
 
             self.guiConf                      = dict()
             self.guiConf['guiPadding']        = 7     # GUI padding.
@@ -3125,10 +3126,10 @@ class GifApp:
             self.guiConf['mainSliderWidth']   = 310 - (self.guiConf['guiPadding']-3) * 2 # Left-hand slider width
         else: # Mac
             # Font configuration
-            self.defaultFont     = tkFont.nametofont("TkDefaultFont")
+            self.defaultFont     = tkinter.font.nametofont("TkDefaultFont")
             self.defaultFont.configure        (family="Arial", size=11)
-            self.defaultFontBig  = tkFont.Font(family="Arial", size=11)
-            self.defaultFontTiny = tkFont.Font(family="Arial", size=9)
+            self.defaultFontBig  = tkinter.font.Font(family="Arial", size=11)
+            self.defaultFontTiny = tkinter.font.Font(family="Arial", size=9)
 
             self.guiConf                      = dict()
             self.guiConf['guiPadding']        = 9
@@ -3147,11 +3148,11 @@ class GifApp:
         # Override Apple menu
         if ImAMac():
             apple = Menu(self.menubar, name='apple')
-            apple.add_command(label="About", command=self.About)           
+            apple.add_command(label="About", command=self.About)
             self.menubar.add_cascade(menu=apple)
 
         # File
-        self.fileMenu = Menu(self.menubar, tearoff=0)        
+        self.fileMenu = Menu(self.menubar, tearoff=0)
 
         self.uploadMenu = Menu(self.fileMenu, tearoff=0)
         self.uploadMenu.add_command(label="Imgur", underline=0, command=self.OnImgurUpload)
@@ -3219,7 +3220,7 @@ class GifApp:
 
         # Help
         self.helpMenu = Menu(self.menubar, tearoff=0)
-        self.helpMenu.add_command(label="About",                      underline=0, command=self.About)              
+        self.helpMenu.add_command(label="About",                      underline=0, command=self.About)
         self.helpMenu.add_command(label="Check For Updates",          underline=0, command=self.CheckForUpdates)
         self.helpMenu.add_command(label="Frequently Asked Questions", underline=0, command=self.OpenFAQ)
         self.helpMenu.add_separator()
@@ -3248,7 +3249,7 @@ class GifApp:
         # s.configure("red.Horizontal.TProgressbar", foreground='#395976', background='#395976')
 
 
-        self.progressBar = ttk.Progressbar(parent, orient=HORIZONTAL, maximum=100, mode='determinate', name='progressBar') #, style="red.Horizontal.TProgressbar")
+        self.progressBar = tkinter.ttk.Progressbar(parent, orient=HORIZONTAL, maximum=100, mode='determinate', name='progressBar') #, style="red.Horizontal.TProgressbar")
         self.progressBar.pack(side=BOTTOM, fill=X)
         self.showProgress = False
         self.progressBarPosition = IntVar()
@@ -3273,7 +3274,7 @@ class GifApp:
         self.btnFopen.grid    (row=rowIdx, column=11, columnspan=2, sticky=W, padx=padding, pady=padding)
         self.btnScreenCap.grid(row=rowIdx, column=13, columnspan=2, sticky=W, padx=padding, pady=padding)
 
-        # 
+        #
         self.txtFname.bind('<Return>', self.OnLoadVideoEnterPressed)
 
         # Bind context menu (cut & paste) action to video URL text field
@@ -3305,7 +3306,7 @@ class GifApp:
 
         # Cropping tool
         #######################################################################
-        
+
         rowIdx += 1
 
         self.canvasSize         = self.guiConf['canvasWidth']
@@ -3431,8 +3432,8 @@ class GifApp:
 
         rowIdx += 1
         self.lblCaption     = Label(self.boxTweaks, text="Captions")
-        self.currentCaption = StringVar()    
-        self.cbxCaptionList = ttk.Combobox(self.boxTweaks, textvariable=self.currentCaption)
+        self.currentCaption = StringVar()
+        self.cbxCaptionList = tkinter.ttk.Combobox(self.boxTweaks, textvariable=self.currentCaption)
         self.captionTracer  = None
 
         self.lblCaption.grid          (row=rowIdx, column=0, columnspan=1, rowspan=1, sticky=W,  padx=padding, pady=padding)
@@ -3479,7 +3480,7 @@ class GifApp:
         self.isDesaturated.trace     ("w", self.OnEffectsChange)
         self.desaturatedAmount.trace ("w", self.OnEffectsChange)
         self.isSepia.trace           ("w", self.OnEffectsChange)
-        self.sepiaAmount.trace       ("w", self.OnEffectsChange)        
+        self.sepiaAmount.trace       ("w", self.OnEffectsChange)
         self.isColorTint.trace       ("w", self.OnEffectsChange)
         self.colorTintAmount.trace   ("w", self.OnEffectsChange)
         self.colorTintColor.trace    ("w", self.OnEffectsChange)
@@ -3557,7 +3558,7 @@ class GifApp:
         # Tool Tips
         #
 
-        tooltips = {   
+        tooltips = {
             self.txtFname:          "",
             self.btnFopen:          "You can paste almost any website address containing a video. Otherwise leave the text field empty and click this button to browse your computer for a video. RIGHT-CLICK on this button if you want to multi-select images.",
             self.btnScreenCap:      "Want to record your screen? Use this feature to record game playback, Kodi, or whatever else.",
@@ -3567,7 +3568,7 @@ class GifApp:
             self.spnStartTimeMin:   "Video extraction start time: Minute",
             self.spnStartTimeSec:   "Video extraction start time: Second",
             self.spnStartTimeMilli: "Video extraction start time: Sub-second",
-    
+
             self.sclFps:            "Choppy/Smooth: Use this slider to control the frame rate of your GIF. Increasing this setting will include more frames making the file size larger. This feature is disabled in Screen Capture mode.",
             self.sclResize:         "Tiny/Big: Use this slider to control the image size from 5% (for ants!) to 100%. Note: increasing this setting will make the file size larger.",
             self.sclNumColors:      "Low Quality/High Quality: Use this slider to control the images color quality.",
@@ -3581,7 +3582,7 @@ class GifApp:
         }
 
         # Bind tool tips
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         logging.info("Instagiffer main window has been created")
@@ -3614,9 +3615,9 @@ class GifApp:
     def OnDeleteTemporaryFiles(self, prompt = True):
         deleteConfirmed = False
         if prompt:
-            deleteConfirmed = tkMessageBox.askyesno("Are You Sure?", "This will delete all downloads as well as the session currently in progress. Are you sure? The following directory will be deleted:\n\n" + self.tempDir)
+            deleteConfirmed = tkinter.messagebox.askyesno("Are You Sure?", "This will delete all downloads as well as the session currently in progress. Are you sure? The following directory will be deleted:\n\n" + self.tempDir)
         else:
-            deleteConfirmed = True            
+            deleteConfirmed = True
 
         if deleteConfirmed:
             if self.gif is not None:
@@ -3703,7 +3704,7 @@ class GifApp:
 
         self.SetStatus("Uploading GIF to Imgur... During this time, Instagiffer will appear frozen. Patience, K?")
         ret = self.gif.UploadGifToImgur()
-        self.SetStatus("Gif uploaded to Imgur. URL: %s" % (ret))            
+        self.SetStatus("Gif uploaded to Imgur. URL: %s" % (ret))
 
         if ret is None:
             self.Alert(imgurErrorTitle, "Failed to upload GIF to Imgur. Grrrrr...")
@@ -3737,11 +3738,11 @@ class GifApp:
         if len(self.socialMediaWarningsEnabled.get()):
             self.conf.SetParam('Warnings', 'socialMedia', bool(int(self.socialMediaWarningsEnabled.get()) == 1))
 
-         # Overwrite setting 
+         # Overwrite setting
 
         if len(self.overwriteOutputGif.get()):
             overwriteFlag = bool(int(self.overwriteOutputGif.get()) == 1)
-            
+
             # Update the configuration object
             self.conf.SetParam('Settings', 'overwriteGif', overwriteFlag)
 
@@ -3759,7 +3760,7 @@ class GifApp:
 
     def OnCancel(self, event):
         if self.guiBusy:
-            if tkMessageBox.askyesno("Cancel Request", "Are you sure you want to cancel the current operation?"):
+            if tkinter.messagebox.askyesno("Cancel Request", "Are you sure you want to cancel the current operation?"):
                 logging.info("Cancel Event")
                 self.cancelRequest = True
 
@@ -3811,7 +3812,7 @@ class GifApp:
         self.spnStartTimeMin.delete(0,"end")
         self.spnStartTimeMin.insert(0, "%02d" % positionComponents[1])
 
-        self.spnStartTimeSec.delete(0,"end") 
+        self.spnStartTimeSec.delete(0,"end")
         self.spnStartTimeSec.insert(0, "%02d" % positionComponents[2])
 
         self.spnStartTimeMilli.delete(0,"end")
@@ -3849,7 +3850,7 @@ class GifApp:
 
     def SetStatus(self, status):
         if self.status.cget("text") != status:
-            logging.info("SetStatus: '" + status + "'")            
+            logging.info("SetStatus: '" + status + "'")
             self.status.config(text=status)
             self.status.update_idletasks()
 
@@ -3973,11 +3974,11 @@ class GifApp:
                 return
         #
         # Direct-from-disk thumbnail mode
-        #       
+        #
         else:
             img = PIL.Image.open(imgPath)
             img = img.resize((int(px2-px) + 1, int(py2-py) + 1), PIL.Image.ANTIALIAS)
-    
+
         self.thumbnailPreview = PIL.ImageTk.PhotoImage(img)
         self.canCropTool.delete('thumbnail')
         self.canCropTool.create_image(px, py, image=self.thumbnailPreview, tag="thumbnail", anchor=NW)
@@ -4017,7 +4018,7 @@ class GifApp:
         framesCount = self.TrackbarCanPlay()
 
         if framesCount >= 1:
-            self.SetThumbNailIndex(self.GetThumbNailIndex() - framesCount) 
+            self.SetThumbNailIndex(self.GetThumbNailIndex() - framesCount)
             self.UpdateThumbnailPreview()
             self.parent.update_idletasks()
         return True
@@ -4321,7 +4322,7 @@ class GifApp:
         self.parent.update()
 
         if self.cancelRequest:
-            self.progressBarPosition.set(0)            
+            self.progressBarPosition.set(0)
             self.cancelRequest = False
             return False
         else:
@@ -4345,7 +4346,7 @@ class GifApp:
 
     def OnTimer(self):
         if not self.guiBusy:
-            if self.conf.GetParamBool('settings', 'autoExtract'):        
+            if self.conf.GetParamBool('settings', 'autoExtract'):
                 self.ProcessImage(1)
 
         self.RestartTimer()
@@ -4372,8 +4373,8 @@ class GifApp:
 
     def Alert(self, title, message):
         logging.info("Alert: title: [%s], message: [%s]" % (title, message.strip()))
-        tkMessageBox.showinfo(title, message)
-    
+        tkinter.messagebox.showinfo(title, message)
+
     def OnRClickPopup(self, event):
         def RClickPaste(event):
             if ImAMac():
@@ -4401,7 +4402,7 @@ class GifApp:
         numLines = sum(1 for line in open(GetLogPath()))
 
         if numLines <= 7:
-            tkMessageBox.showinfo("Bug Report", "It looks like the bug report is currently empty. Please try to reproduce the bug first, and then generate the report")
+            tkinter.messagebox.showinfo("Bug Report", "It looks like the bug report is currently empty. Please try to reproduce the bug first, and then generate the report")
 
         OpenFileWithDefaultApp(GetLogPath())
 
@@ -4420,7 +4421,7 @@ class GifApp:
 
         if self.captionTracer is not None:
             self.currentCaption.trace_vdelete("w", self.captionTracer)
-            self.captionTracer = None       
+            self.captionTracer = None
 
         self.cbxCaptionList["values"] = ('[Click here to add a new caption]',)
         self.cbxCaptionList.current(0)
@@ -4468,9 +4469,9 @@ class GifApp:
         return retVal
 
     #
-    # otherOptions: 
+    # otherOptions:
     def EnableInputs(self, optionsRequiringLoadedVideo, otherOptions, forceEnable = False):
-       
+
         if self.gif == None:
             optionsRequiringLoadedVideo = False
 
@@ -4510,7 +4511,7 @@ class GifApp:
 
             for x in range(0, self.frameMenuItemCount):
                self.frameMenu.entryconfigure(x, state="normal")
-         
+
         else:
             self.fileMenu.entryconfigure(0, state="disabled") # save for later
             self.fileMenu.entryconfigure(2, state="disabled") # imgur
@@ -4520,7 +4521,7 @@ class GifApp:
             self.sclNumColors.configure(state="disabled")
             self.sclBright.configure(state="disabled")
             self.sclResize.configure(state="disabled")
-            self.sclSpeedModifier.configure(state="disabled")          
+            self.sclSpeedModifier.configure(state="disabled")
             self.btnEditEffects.configure(state="disabled")
 
 
@@ -4541,7 +4542,7 @@ class GifApp:
                 self.qualityMenu.entryconfigure(x, state="normal")
         else:
             self.btnFopen.configure(state="disabled")
-            self.btnScreenCap.configure(state="disabled")            
+            self.btnScreenCap.configure(state="disabled")
 
             for x in range(0, 2, 3):
                 self.fileMenu.entryconfigure(x, state="disabled")
@@ -4562,7 +4563,7 @@ class GifApp:
 
         if duration == 0.0 or (videoLen > 0.0 and videoLen < duration):
             duration = videoLen
-        
+
         self.duration.set(duration)
 
         if self.gif.SourceIsVideo():
@@ -4644,7 +4645,7 @@ class GifApp:
 
         if self.showPreviewFlag == False:
             return False
-        
+
         if self.gif.PreviewFileExists():
             self.ShowImageOnCanvas(self.gif.GetPreviewImagePath())
 
@@ -4694,7 +4695,7 @@ class GifApp:
                     return False, "Instagiffer only supports up to 10000 frames per GIF internally"
 
                 if totalFrames > int(self.conf.GetParam('settings', 'largeGif')):
-                    if not tkMessageBox.askyesno("Be careful!", "You're about to make a really long GIF. Are you sure you want to continue?"):
+                    if not tkinter.messagebox.askyesno("Be careful!", "You're about to make a really long GIF. Are you sure you want to continue?"):
                         return False, "User chose not to make a really long GIF"
 
         if processStages >= 2:
@@ -4789,7 +4790,7 @@ class GifApp:
 
             logging.info("Edits detected. Prompt user. TimestampLastProcess: %d ; TimestampImagesLastModified: %d", self.lastProcessTsByLevel[1], self.gif.GetExtractedImagesLastModifiedTs())
 
-            if tkMessageBox.askyesno("I just noticed something!",
+            if tkinter.messagebox.askyesno("I just noticed something!",
                                     "It looks like you imported frames, deleted frames, or made image edits in another program. " +
                                     "Making changes to animation smoothness, duration or start time will generate a new sequence of " +
                                     "images, overwriting your changes. Would you like to generate a new sequence of images based your updated settings?"):
@@ -4836,7 +4837,7 @@ class GifApp:
                     self.SetStatus("Generating Preview... First preview takes a few secs to generate. Subsequent previews will be quicker...")
                 else:
                     self.SetStatus("(2/" + str(processStages) + ") Cropping and resizing...")
-                
+
                 if not preview:
                     self.gif.CropAndResize()
                     self.lastProcessTsByLevel[2] = time.time()
@@ -4853,10 +4854,10 @@ class GifApp:
                     self.SetStatus("(3/" + str(processStages) + ") Applying effects and generating %s (%s)..." % (self.gif.GetFinalOutputFormat(), self.gif.GetNextOutputPath()))
                     self.gif.Generate(not imageProcessingRequired)
                     self.lastProcessTsByLevel[3] = time.time()
-                
+
                 self.SetStatus("Done")
 
-        except Exception, e:
+        except Exception as e:
             self.guiBusy  = True
             errorMsg = str(e)
             logging.error(errorMsg)
@@ -4895,7 +4896,7 @@ class GifApp:
 
         if doUpdateThumbs:
             self.SetThumbNailIndex(1)
-            self.UpdateThumbnailPreview()    
+            self.UpdateThumbnailPreview()
 
         if inputDisabled:
             self.EnableInputs(True, True)
@@ -4907,7 +4908,7 @@ class GifApp:
             return ""
 
         if type(videoPath) is list:
-            fileList = list()    
+            fileList = list()
             for f in videoPath:
                 if len(f) > 0:
                     fileList.append(f)
@@ -4918,8 +4919,8 @@ class GifApp:
         imgCount   = 0
         otherCount = 0
         for f in fileList:
-            f = f.replace( u'/', os.sep )
-            logging.info(u'Filename: "' + f + '"')
+            f = f.replace( '/', os.sep )
+            logging.info('Filename: "' + f + '"')
             if IsPictureFile(f):
                 imgCount += 1
             else:
@@ -4937,7 +4938,7 @@ class GifApp:
             return ""
 
         if imgCount > 1:
-            returnStr = u"|".join(fileList)
+            returnStr = "|".join(fileList)
         else:
             returnStr = fileList[0]
 
@@ -5026,7 +5027,7 @@ class GifApp:
             try:
                 self.gif = AnimatedGif(self.conf, fileName, self.tempDir, self.OnShowProgress, self.parent)
 
-            except Exception, e:
+            except Exception as e:
                 self.gif = None
                 rc       = False
                 errStr   = str(e)
@@ -5087,12 +5088,12 @@ class GifApp:
     def CreateChildDialog(self, title, resizable=False, parent=None):
         if parent is None:
             parent = self.parent
-        
+
         popupWindow = Toplevel(parent)
         popupWindow.withdraw()
         popupWindow.title(title)
         popupWindow.wm_iconbitmap('instagiffer.ico')
-        #popupWindow.transient(self.mainFrame)         # 
+        #popupWindow.transient(self.mainFrame)         #
 
         if not resizable:
             popupWindow.resizable(0,0)
@@ -5106,7 +5107,7 @@ class GifApp:
         dlg.lift()
         dlg.focus()
         dlg.grab_set()
-        #self.guiBusy = True        
+        #self.guiBusy = True
 
     def WaitForChildDialog(self, dlg, dlgGeometry=None):
         dlg.update()
@@ -5148,7 +5149,7 @@ class GifApp:
             return
 
         popupWindow = self.CreateChildDialog("Instagiffer GIF Preview")
-        
+
         isResizable = self.conf.GetParamBool('settings', 'resizablePlayer')
 
         if isResizable:
@@ -5163,7 +5164,7 @@ class GifApp:
             soundPath = None
             if ImAPC() and self.isAudioEnabled.get() and self.HaveAudioPath() and self.gif.GetFinalOutputFormat() != 'gif':
                 soundPath = self.gif.GetAudioClipPath()
-    
+
             anim = GifPlayerWidget(popupWindow, filename, frameDelay * 10, isResizable, soundPath)
         except MemoryError:
             self.Alert("Gif Player", "Unable to show preview. Your GIF is too big.")
@@ -5202,10 +5203,10 @@ class GifApp:
             self.OnCaptionConfig()
 
     def GetFamilyList(self):
-        return self.fonts.keys()
+        return list(self.fonts.keys())
 
     def GetFontAttributeList(self, fontFamily):
-        return self.fonts[fontFamily].keys()
+        return list(self.fonts[fontFamily].keys())
 
     def GetFontId(self, fontFamily, fontStyle):
         return self.fonts[fontFamily][fontStyle]
@@ -5223,7 +5224,7 @@ class GifApp:
         spnDuration     = Spinbox(popupWindow, font=self.defaultFont, from_=1, to=60, increment=0.5, width=4, textvariable=self.screenCapDurationSec)
         chkLowFps       = Checkbutton(popupWindow, font=self.defaultFont, text="Web-optimized", variable=self.screenCapLowerFps)
         chkRetina       = Checkbutton(popupWindow, font=self.defaultFont, text="Retina Display", variable=self.screenCapRetina)
-        chkCursor       = Checkbutton(popupWindow, font=self.defaultFont, text="Show Cursor", variable=self.screenCapShowCursor)       
+        chkCursor       = Checkbutton(popupWindow, font=self.defaultFont, text="Show Cursor", variable=self.screenCapShowCursor)
         lblResizeWindow = Label(popupWindow, text="",  background="#A2DEF2")
         btnStartCap     = Button(popupWindow, text='Start')
 
@@ -5250,7 +5251,7 @@ class GifApp:
         popupWindow.rowconfigure(0, weight=1)
         popupWindow.columnconfigure(0, weight=1)
 
-        tooltips = {   
+        tooltips = {
             spnDuration:  "Choose how long you wish to capture for. A reasonable value here is from 5-15 seconds.",
             chkRetina:    "Check this if your Mac has a retina display. If you don't check this, your capture region will not match what actually gets recorded.",
             chkLowFps:    "Select this option if you plan on posting the GIF online. A lower frame rate and smaller image size provides you some budget to increase image quality.",
@@ -5258,7 +5259,7 @@ class GifApp:
             btnStartCap:  "Click here to start recording. If you CTRL-CLICK, a 5 second count-down will occur",
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
 
@@ -5286,7 +5287,7 @@ class GifApp:
 
         def OnResize(event):
             w,h,ww,wh = GetCaptureDimensions()
-            
+
             dimensionStr = "%dx%d" % (w,h)
 
             lblResizeWindow.config(text = dimensionStr)
@@ -5314,7 +5315,7 @@ class GifApp:
             OnMouseWheel(event, freezeX=False, freezeY=True)
 
         def OnMouseWheelY(event):
-            OnMouseWheel(event, freezeX=True, freezeY=False)      
+            OnMouseWheel(event, freezeX=True, freezeY=False)
 
         def StartMove(event):
             self._screencapXgbl = event.x
@@ -5423,7 +5424,7 @@ class GifApp:
         if len(self.OnSetLogoDefaults) > 0:
             self.miscGifChanges += self.conf.SetParamBool('imagelayer1', 'applyFx',     self.OnSetLogoDefaults["logoApplyFx"])
             self.miscGifChanges += self.conf.SetParam(    'imagelayer1', 'path',        self.OnSetLogoDefaults["logoPath"])
-            self.miscGifChanges += self.conf.SetParam(    'imagelayer1', 'positioning', self.OnSetLogoDefaults["logoPositioning"])            
+            self.miscGifChanges += self.conf.SetParam(    'imagelayer1', 'positioning', self.OnSetLogoDefaults["logoPositioning"])
             self.miscGifChanges += self.conf.SetParam(    'imagelayer1', 'resize',      self.OnSetLogoDefaults["logoResize"])
             self.miscGifChanges += self.conf.SetParam(    'imagelayer1', 'opacity',     self.OnSetLogoDefaults["logoOpacity"])
             self.miscGifChanges += self.conf.SetParam(    'imagelayer1', 'xNudge',      self.OnSetLogoDefaults["logoXoffset"])
@@ -5450,18 +5451,18 @@ class GifApp:
         btnChooseFile     = Button(dlg, text='Browse...', padx=4, pady=4, width=15, font=self.defaultFontTiny)
         lblPos            = Label(dlg, font=self.defaultFont, text="Positioning")
         positioning       = StringVar()
-        cbxPosition       = ttk.Combobox(dlg, textvariable=positioning, state='readonly', width=15, values=('Top Left', 'Top', 'Top Right', 'Middle Left', 'Center', 'Middle Right', 'Bottom Left', 'Bottom', 'Bottom Right'))
+        cbxPosition       = tkinter.ttk.Combobox(dlg, textvariable=positioning, state='readonly', width=15, values=('Top Left', 'Top', 'Top Right', 'Middle Left', 'Center', 'Middle Right', 'Bottom Left', 'Bottom', 'Bottom Right'))
         lblFilters        = Label(dlg, font=self.defaultFont, text="Apply Filters")
         applyFxToLogo     = IntVar()
         chkApplyFxToLogo  = Checkbutton(dlg, text="", variable=applyFxToLogo)
 
         lblResize         = Label(dlg, font=self.defaultFont, text="Size Percentage")
         resizePercent     = IntVar()
-        spnResizePercent  = Spinbox(dlg, font=self.defaultFont, from_=1, to=100, increment=1, width=5, textvariable=resizePercent, repeatdelay=300, repeatinterval=30, state='readonly', wrap=True) 
+        spnResizePercent  = Spinbox(dlg, font=self.defaultFont, from_=1, to=100, increment=1, width=5, textvariable=resizePercent, repeatdelay=300, repeatinterval=30, state='readonly', wrap=True)
 
         lblOpacity        = Label(dlg, font=self.defaultFont, text="Opacity")
         opacity           = IntVar()
-        spnOpacityPercent = Spinbox(dlg, font=self.defaultFont, from_=1, to=100, increment=1, width=5, textvariable=opacity, repeatdelay=300, repeatinterval=30, state='readonly', wrap=True) 
+        spnOpacityPercent = Spinbox(dlg, font=self.defaultFont, from_=1, to=100, increment=1, width=5, textvariable=opacity, repeatdelay=300, repeatinterval=30, state='readonly', wrap=True)
 
         lblXOffset        = Label(dlg, font=self.defaultFont, text="X Offset")
         xoffset           = IntVar()
@@ -5469,7 +5470,7 @@ class GifApp:
 
         lblYOffset        = Label(dlg, font=self.defaultFont, text="Y Offset")
         yoffset           = IntVar()
-        spnY              = Spinbox(dlg, font=self.defaultFont, from_=-500, to=500, increment=1, width=5, textvariable=yoffset, repeatdelay=300, repeatinterval=30, state='readonly') 
+        spnY              = Spinbox(dlg, font=self.defaultFont, from_=-500, to=500, increment=1, width=5, textvariable=yoffset, repeatdelay=300, repeatinterval=30, state='readonly')
 
         btnOk             = Button(dlg, text='OK', padx=4, pady=4)
 
@@ -5518,7 +5519,7 @@ class GifApp:
         rowIdx += 1
         btnOk.grid                (row=rowIdx, column=0, sticky=EW, padx=4, pady=4, columnspan=3)
 
-        tooltips = {   
+        tooltips = {
             btnChooseFile:     "Choose a logo image in .gif format. Your logo can contain transparency.",
             cbxPosition:       "Select where you wish the logo to be positioned on your GIF",
             chkApplyFxToLogo:  "If unchecked, your logo will appear on top of all of the effects, unprocessed",
@@ -5528,8 +5529,8 @@ class GifApp:
             spnY:              "Shift logo this many pixels in the vertical direction."
         }
 
-        # Populate 
-        for item, tipString in tooltips.iteritems():
+        # Populate
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         def OnChooseFileClicked():
@@ -5577,7 +5578,7 @@ class GifApp:
 
         deleteEvenOnly    = IntVar()
         lblDeleteEvenOnly = Label(dlg, font=self.defaultFont, text="Delete Even Frames Only")
-        chkDeleteEvenOnly = Checkbutton(dlg, text="", variable=deleteEvenOnly)       
+        chkDeleteEvenOnly = Checkbutton(dlg, text="", variable=deleteEvenOnly)
 
         btnDelete         = Button(dlg, text='Delete', padx=4, pady=4)
 
@@ -5586,16 +5587,16 @@ class GifApp:
         lblEndFrame.grid         (row=1, column=0, sticky=W,  padx=4, pady=4)
         sclEndFrame.grid         (row=1, column=1, sticky=W,  padx=4, pady=4)
         lblDeleteEvenOnly.grid   (row=2, column=0, sticky=W,  padx=4, pady=4)
-        chkDeleteEvenOnly.grid   (row=2, column=1, sticky=W,  padx=4, pady=4)        
+        chkDeleteEvenOnly.grid   (row=2, column=1, sticky=W,  padx=4, pady=4)
         btnDelete.grid           (row=3, column=0, sticky=EW, padx=4, pady=4, columnspan=2)
 
-        tooltips = {   
+        tooltips = {
             sclStartFrame:     "Start deleting from this frame.",
             sclEndFrame:       "Delete up-to-and-including this frame",
             chkDeleteEvenOnly: "Delete even numbered frames only. This is handy if you want to thin out your frames to reduce framerate and overall GIF file size. You can perform this over-and-over again in order to keep reducing frame rate."
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         def OnDeleteClicked():
@@ -5605,7 +5606,7 @@ class GifApp:
             btnDelete.configure(state="disabled")
 
             if start == 1 and end == numFrames and deleteEvenOnly.get() == 0:
-                tkMessageBox.showinfo("You're trying to delete every frame", "You can't delete every frame. Please re-adjust your start and end position")
+                tkinter.messagebox.showinfo("You're trying to delete every frame", "You can't delete every frame. Please re-adjust your start and end position")
                 dlg.lift()
                 return False
 
@@ -5677,7 +5678,7 @@ class GifApp:
         rowNum +=1
         btnExport.grid         (row=rowNum, column=0, sticky=EW, padx=4, pady=4, columnspan=2)
 
-        tooltips = {   
+        tooltips = {
             txtPrefix:     "All exported frames will start with this pattern. A sequential number will be appended to the end.",
             chkCropResize: "Apply resize and crop settings to exported frames.",
             sclStartFrame: "Start exporting from this frame.",
@@ -5685,7 +5686,7 @@ class GifApp:
             spnRotation:   "Rotate frames by this many degrees. 0 means no rotation"
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
 
@@ -5724,7 +5725,7 @@ class GifApp:
                 self.SetStatus("Frames %d to %d exported to %s" % (start, end, outputDir))
             else:
                 # assume that this is the error.
-                tkMessageBox.showinfo("Export Failed", "Failed to export frames!")
+                tkinter.messagebox.showinfo("Export Failed", "Failed to export frames!")
                 btnExport.configure(state="normal")
                 return False
 
@@ -5770,7 +5771,7 @@ class GifApp:
         chkBlankFrame    = Checkbutton(dlg, text="", variable=blankFrame)
 
         numBlanks        = IntVar()
-        spnBlanks        = Spinbox(dlg, font=self.defaultFont, from_=1, to=100, increment=1, width=5, textvariable=numBlanks, repeatdelay=300, repeatinterval=30, state='readonly') 
+        spnBlanks        = Spinbox(dlg, font=self.defaultFont, from_=1, to=100, increment=1, width=5, textvariable=numBlanks, repeatdelay=300, repeatinterval=30, state='readonly')
         numBlanks.set(1)
 
         btnImport        = Button(dlg, text=buttonTitle[blankFrame.get()], padx=4, pady=4)
@@ -5781,20 +5782,20 @@ class GifApp:
         rowIdx += 1
         lblStartFrame.grid        (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         sclStartFrame.grid        (row=rowIdx, column=1, sticky=W,  padx=4, pady=4, columnspan=2)
-        
+
         rowIdx += 1
         lblImportReversed.grid    (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         chkImportReversed.grid    (row=rowIdx, column=1, sticky=W,  padx=4, pady=4, columnspan=2)
 
-        rowIdx += 1        
+        rowIdx += 1
         lblRiffleShuffle.grid     (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         chkRiffleShuffle.grid     (row=rowIdx, column=1, sticky=W,  padx=4, pady=4, columnspan=2)
 
-        rowIdx += 1        
+        rowIdx += 1
         lblStretch.grid           (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         chkStretch.grid           (row=rowIdx, column=1, sticky=W,  padx=4, pady=4, columnspan=2)
 
-        rowIdx += 1        
+        rowIdx += 1
         lblBlankFrame.grid        (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         chkBlankFrame.grid        (row=rowIdx, column=1, sticky=W,  padx=4, pady=4)
         spnBlanks.grid            (row=rowIdx, column=2, sticky=W,  padx=4, pady=4)
@@ -5803,17 +5804,17 @@ class GifApp:
         btnImport.grid            (row=rowIdx, column=0, sticky=EW, padx=4, pady=4, columnspan=3)
 
 
-        tooltips = {   
+        tooltips = {
             sclStartFrame:     "Set the position in your GIF where you want the frames to be imported. Importing at frame 0 will import frames before the first frame.",
             chkImportReversed: "Import frames in reverse order. Handy for making bouncing loops (a->b->a). Also known as patrol loops, forward-reverse loops, boomerangs or symmetric loops.",
             chkRiffleShuffle:  "Interleave imported frames with existing frames.",
             chkStretch:        "Stretch to fit. Otherwise maintain aspect ratio. You may end up with black bars if your images don't have similar sizes.",
-            chkBlankFrame:     "Import blank (black) frames.", 
+            chkBlankFrame:     "Import blank (black) frames.",
             spnBlanks:         "Number of blank frames to insert.",
             btnImport:         "Once you click this button, a dialog will appear where you can multi-select files to be imported multiple files. Note: They will be resized to match your current GIF dimensions.",
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         #
@@ -5841,7 +5842,7 @@ class GifApp:
 
         def OnImportClicked():
             start         = int(sclStartFrame.get())
-            
+
             if start == 0:
                 insertAfter = False
                 start       = 1
@@ -5887,7 +5888,7 @@ class GifApp:
     # Manual Size and Crop
     def OnManualSizeAndCrop(self):
         dlg  = self.CreateChildDialog("Crop Settings")
-        
+
         if dlg is None:
             return False
 
@@ -5940,11 +5941,11 @@ class GifApp:
         rowIdx += 1
         lblWidth.grid       (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         spnWidth.grid       (row=rowIdx, column=1, sticky=W,  padx=4, pady=4)
-        
+
         rowIdx += 1
         lblHeight.grid      (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         spnHeight.grid      (row=rowIdx, column=1, sticky=W,  padx=4, pady=4, columnspan=2)
-        
+
         rowIdx += 1
         btnOK.grid          (row=rowIdx, column=0, sticky=EW, padx=4, pady=4, columnspan=2)
 
@@ -5957,7 +5958,7 @@ class GifApp:
             btnOK:         "All done!",
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         #
@@ -6079,12 +6080,12 @@ class GifApp:
         sclEndFrame.grid         (row=1, column=1, sticky=W,  padx=4, pady=4)
         btnCreateFade.grid       (row=2, column=0, sticky=EW, padx=4, pady=4, columnspan=2)
 
-        tooltips = { 
+        tooltips = {
             sclStartFrame:  "Frame to start crossfade. If greater than end frame, crossfade will loop around. To make cross fade effective, make sure you include an equal number of frames on either side of the transition point.",
             sclEndFrame:    "Frame to end crossfade",
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         def OnCreateFadeClicked():
@@ -6121,7 +6122,7 @@ class GifApp:
     #
     def OnEditAudioSettings(self, parentDlg):
         if self.gif is None:
-            return False 
+            return False
 
         dlg  = self.CreateChildDialog("Configure Audio", parent=parentDlg)
 
@@ -6134,7 +6135,7 @@ class GifApp:
         btnChooseFile         = Button(dlg, text='Load Audio', padx=4, pady=4, width=12, font=self.defaultFontTiny)
 
         lblStart              = Label(dlg, font=self.defaultFont, text="Start time")
- 
+
         timeValues = [ "%02d" % (x) for x in range(0, 60)]
         timeValues = " ".join(timeValues)
 
@@ -6150,14 +6151,14 @@ class GifApp:
 
         lblVolume             = Label(dlg, font=self.defaultFont, text="Volume %")
         volume                = IntVar()
-        spnVolume             = Spinbox(dlg, font=self.defaultFont, from_=0, to=300, increment=1, width=5, textvariable=volume, repeatdelay=300, repeatinterval=15, state='readonly') 
+        spnVolume             = Spinbox(dlg, font=self.defaultFont, from_=0, to=300, increment=1, width=5, textvariable=volume, repeatdelay=300, repeatinterval=15, state='readonly')
 
         btnPreview             = Button(dlg, text='Play', padx=4, pady=4, width=12, font=self.defaultFontTiny)
         btnOk                  = Button(dlg, text='OK', padx=4, pady=4)
 
         # # Load default values
         txtPath.insert(0, self.conf.GetParam('audio', 'path'))
-        secs = float(self.conf.GetParam('audio', 'startTime'))        
+        secs = float(self.conf.GetParam('audio', 'startTime'))
         h, m, s, ms = MillisecToDurationComponents(secs * 1000.0)
         audioStartTimeMin.set("%02d" % m)
         audioStartTimeSec.set("%02d" % s)
@@ -6191,12 +6192,12 @@ class GifApp:
         rowIdx += 1
         btnOk.grid                  (row=rowIdx, column=0, sticky=EW, padx=4, pady=4, columnspan=7)
 
-        tooltips = {   
+        tooltips = {
             btnChooseFile:  "Click to start download of a URL, or to browse for a local file",
             txtPath:        "Hint: video URLs are supported in addition to local files",
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         def OnTimeChanged():
@@ -6226,7 +6227,7 @@ class GifApp:
             return True
 
         def AudioFileExists():
-            return os.path.exists(txtPath.get())    
+            return os.path.exists(txtPath.get())
 
         def GetStartTime():
             timeStart = float(spnAudioStartTimeMin.get())*60 + float(spnAudioStartTimeSec.get()) + float(spnAudioStartTimeMilli.get())/10.0
@@ -6238,8 +6239,8 @@ class GifApp:
 
             if AudioFileExists():
                 self.audioChanges += self.conf.SetParam('audio', 'path',      txtPath.get())
-                self.audioChanges += self.conf.SetParam('audio', 'startTime', str(GetStartTime())) 
-                self.audioChanges += self.conf.SetParam('audio', 'volume',    str(volume.get())) 
+                self.audioChanges += self.conf.SetParam('audio', 'startTime', str(GetStartTime()))
+                self.audioChanges += self.conf.SetParam('audio', 'volume',    str(volume.get()))
 
                 audioChanged = False
                 btnPreview.configure(state="normal")
@@ -6292,7 +6293,7 @@ class GifApp:
             return False
 
         dlg  = self.CreateChildDialog("Edit Mask", parent=parentDlg)
-        
+
         if dlg is None:
             return False
 
@@ -6302,7 +6303,7 @@ class GifApp:
         scaleFactor = 1.0
 
         if maxX < self.gif.GetVideoWidth() or maxY < self.gif.GetVideoHeight():
-            scaleFactor = min( 
+            scaleFactor = min(
                         float(maxX)/float(self.gif.GetVideoWidth()),
                         float(maxY)/float(self.gif.GetVideoHeight())
                         )
@@ -6349,7 +6350,7 @@ class GifApp:
             btnOK:         "All done!",
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
 
@@ -6361,7 +6362,7 @@ class GifApp:
                 x2, y2 = ( x + halfpb ), ( y + halfpb )
                 paintCanvas.create_oval( x1, y1, x2, y2, fill=brushColor, outline=brushColor, tag="paint" )
             else:
-                # Scale everything 
+                # Scale everything
                 invScaleFactor = 1.0/scaleFactor
                 x         *= invScaleFactor
                 y         *= invScaleFactor
@@ -6406,7 +6407,7 @@ class GifApp:
         def OnReset(onDialogLoad=False):
             if not onDialogLoad:
                 self.maskEventList = []
-                self.maskEdited    = True 
+                self.maskEdited    = True
 
             paintCanvas.delete('paint')
             paintCanvas.create_image(0, 0, image=photoImg, tag="frame", anchor=NW)
@@ -6490,7 +6491,7 @@ class GifApp:
         self.fxHash = ""
 
         dlg  = self.CreateChildDialog("Filters")
-        
+
         if dlg is None:
             return False
 
@@ -6610,7 +6611,7 @@ class GifApp:
             chkEdgeFade:       "Make the edges of your GIF look burnt.",
             chkBorder:         "Add a simple colored border.",
             chkNashville:      "Gives an iconic, nostalgic look to your GIF",
-            chkBlurred:        "Blur effect",            
+            chkBlurred:        "Blur effect",
             chkCinemagraph:    "Freeze the entire GIF except for regions which you define. Requires a mask setting",
             chkCinemaInvert:   "Animate the regions that are NOT painted instead",
             btnEditMask:       "Edit the areas you wish to stay animated.",
@@ -6618,7 +6619,7 @@ class GifApp:
             btnEditSound:      "Pick your audio track and start time."
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         def OnOK():
@@ -6649,7 +6650,7 @@ class GifApp:
             ret     = self.OnEditMask(dlg)
 
             self.ReModalDialog(dlg)
-            
+
             if self.HaveMask():
                 if chkCinemagraph.cget('state') == 'disabled':
                     chkCinemagraph.configure(state="normal")
@@ -6677,10 +6678,10 @@ class GifApp:
         btnOK.configure(command=OnOK)
         btnTintColor.configure(command=OnSelectTintColor)
         btnBorderColor.configure(command=OnSelectBorderColor)
-        btnEditMask.configure(command=OnEditMaskClicked)     
+        btnEditMask.configure(command=OnEditMaskClicked)
         btnEditSound.configure(command=OnEditAudioClicked)
 
-        if self.conf.GetParamBool('settings', 'autoPreview'):   
+        if self.conf.GetParamBool('settings', 'autoPreview'):
             self.OnShowPreview(None)
 
         return self.WaitForChildDialog(dlg)
@@ -6701,7 +6702,7 @@ class GifApp:
         logging.info("Font count: %d" % (fonts.GetFontCount()))
 
         if fonts.GetFontCount() == 0:
-            tkMessageBox.showinfo("Font Issue", "I wasn't able to find any fonts :(")
+            tkinter.messagebox.showinfo("Font Issue", "I wasn't able to find any fonts :(")
             return False
 
         # Default form values
@@ -6758,20 +6759,20 @@ class GifApp:
 
         lblFont                 = Label(captionDlg, text="Font")
         fontFamily              = StringVar()
-        cbxFontFamily           = ttk.Combobox(captionDlg, textvariable=fontFamily, state='readonly', width=20)
+        cbxFontFamily           = tkinter.ttk.Combobox(captionDlg, textvariable=fontFamily, state='readonly', width=20)
 
         cbxFontFamily['values'] = fonts.GetFamilyList()
-        cbxFontFamily.current(self.OnCaptionConfigDefaults["defaultFontIdx"]) 
+        cbxFontFamily.current(self.OnCaptionConfigDefaults["defaultFontIdx"])
 
         fontStyle               = StringVar()
         lblStyle                = Label(captionDlg, font=self.defaultFont, text="Style")
-        cbxStyle                = ttk.Combobox(captionDlg, textvariable=fontStyle, state='readonly', width=15, values=(fonts.GetFontAttributeList(fontFamily.get())))
+        cbxStyle                = tkinter.ttk.Combobox(captionDlg, textvariable=fontStyle, state='readonly', width=15, values=(fonts.GetFontAttributeList(fontFamily.get())))
         cbxStyle.current(self.OnCaptionConfigDefaults["defaultFontStyleIdx"])
 
         positioning             = StringVar()
         lblPosition             = Label(captionDlg, font=self.defaultFont, text="Positioning")
-        cbxPosition             = ttk.Combobox(captionDlg, textvariable=positioning, state='readonly', width=15, values=positions)
-        cbxPosition.current(self.OnCaptionConfigDefaults["defaultPosition"])    
+        cbxPosition             = tkinter.ttk.Combobox(captionDlg, textvariable=positioning, state='readonly', width=15, values=positions)
+        cbxPosition.current(self.OnCaptionConfigDefaults["defaultPosition"])
 
         btnCaptionFontColor     = Button(captionDlg,  font=self.defaultFont, text="Color Picker")
 
@@ -6782,7 +6783,7 @@ class GifApp:
         lblEndFrame    = Label(captionDlg, font=self.defaultFont, text="End Frame")
         sclEndFrame    = Scale(captionDlg, font=self.defaultFontTiny, from_=1, to=numFrames, resolution=1, tickinterval=0, orient=HORIZONTAL, sliderlength=20, width=15, length=275, showvalue=1)
         sclEndFrame.set(numFrames)
-        
+
         animateSetting   = StringVar()
         animationType    = StringVar()
         lblAnimate       = Label(captionDlg, font=self.defaultFont, text="Animation")
@@ -6795,17 +6796,17 @@ class GifApp:
 
         animValues.append("Random")
 
-        cbxAnimate       = ttk.Combobox(captionDlg, textvariable=animateSetting, state='readonly', width=15, values=tuple(animValues))
+        cbxAnimate       = tkinter.ttk.Combobox(captionDlg, textvariable=animateSetting, state='readonly', width=15, values=tuple(animValues))
         cbxAnimate.current(0)
 
-        cbxAnimateType   = ttk.Combobox(captionDlg, textvariable=animationType, state='readonly', width=15, values=('Blink', 'Left-Right', 'Up-Down'))
+        cbxAnimateType   = tkinter.ttk.Combobox(captionDlg, textvariable=animationType, state='readonly', width=15, values=('Blink', 'Left-Right', 'Up-Down'))
         cbxAnimateType.current(0)
 
         lblOutline            = Label(captionDlg, font=self.defaultFont, text="Outline")
         lblOutlineSize        = Label(captionDlg, font=self.defaultFont, text="Size")
 
         outlineThickness      = IntVar()
-        spnCaptionFontOutlineSize = Spinbox(captionDlg, font=self.defaultFont, from_=0, to=15, increment=1, width=5, textvariable=outlineThickness, repeatdelay=300, repeatinterval=60, state='readonly') 
+        spnCaptionFontOutlineSize = Spinbox(captionDlg, font=self.defaultFont, from_=0, to=15, increment=1, width=5, textvariable=outlineThickness, repeatdelay=300, repeatinterval=60, state='readonly')
         outlineThickness.set(self.OnCaptionConfigDefaults["defaultFontOutlineThickness"])
 
         dropShadow        = IntVar()
@@ -6819,12 +6820,12 @@ class GifApp:
 
         lblOpacity            = Label(captionDlg, font=self.defaultFont, text="Opacity")
         opacity               = IntVar()
-        spnOpacity            = Spinbox(captionDlg, font=self.defaultFont, from_=0, to=100, increment=1, width=5, textvariable=opacity, repeatdelay=300, repeatinterval=30, state='readonly', wrap=True) 
+        spnOpacity            = Spinbox(captionDlg, font=self.defaultFont, from_=0, to=100, increment=1, width=5, textvariable=opacity, repeatdelay=300, repeatinterval=30, state='readonly', wrap=True)
         opacity.set(self.OnCaptionConfigDefaults["defaultOpacity"])
 
         lblLineSpacing        = Label(captionDlg, font=self.defaultFont, text="Line Space Adj.")
         lineSpacing           = IntVar()
-        spnSpacing            = Spinbox(captionDlg, font=self.defaultFont, from_=-200, to=200, increment=1, width=5, textvariable=lineSpacing, repeatdelay=300, repeatinterval=30, state='readonly') 
+        spnSpacing            = Spinbox(captionDlg, font=self.defaultFont, from_=-200, to=200, increment=1, width=5, textvariable=lineSpacing, repeatdelay=300, repeatinterval=30, state='readonly')
         lineSpacing.set(self.OnCaptionConfigDefaults["defaultLineSpacing"])
 
         btnOk = Button(captionDlg, text='Done', padx=4, pady=4)
@@ -6836,10 +6837,10 @@ class GifApp:
 
         rowIdx += 1
         lblFont.grid             (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
-        cbxFontFamily.grid       (row=rowIdx, column=1, sticky=W,  padx=4, pady=4)        
+        cbxFontFamily.grid       (row=rowIdx, column=1, sticky=W,  padx=4, pady=4)
         spnCaptionFontSize.grid  (row=rowIdx, column=2, sticky=W,  padx=4, pady=4)
         btnCaptionFontColor.grid (row=rowIdx, column=3, sticky=W,  padx=4, pady=4)
-        
+
         rowIdx += 1
         lblSample.grid           (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         lblFontPreview.grid      (row=rowIdx, column=1, sticky=W,  padx=4, pady=4, columnspan=3)
@@ -6854,7 +6855,7 @@ class GifApp:
 
         rowIdx += 1
         lblOutline.grid                (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
-        
+
         spnCaptionFontOutlineSize.grid (row=rowIdx, column=1, sticky=W,  padx=4, pady=4)
         chkdropShadow.grid          (row=rowIdx, column=2, sticky=W,  padx=0, pady=4, columnspan=2)
 
@@ -6870,10 +6871,10 @@ class GifApp:
         lblFilters.grid          (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         chkApplyFxToText.grid    (row=rowIdx, column=1, sticky=W,  padx=0, pady=4, columnspan=1)
 
-        rowIdx += 1  
+        rowIdx += 1
         lblAnimate.grid          (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
         cbxAnimateType.grid      (row=rowIdx, column=1, sticky=EW,  padx=4, pady=4)
-        cbxAnimate.grid          (row=rowIdx, column=2, sticky=EW,  padx=4, pady=4, columnspan=2) 
+        cbxAnimate.grid          (row=rowIdx, column=2, sticky=EW,  padx=4, pady=4, columnspan=2)
 
         rowIdx += 1
         lblStartFrame.grid       (row=rowIdx, column=0, sticky=W,  padx=4, pady=4)
@@ -6883,9 +6884,9 @@ class GifApp:
         sclEndFrame.grid         (row=rowIdx, column=1, sticky=EW,  padx=4, pady=4, columnspan=3)
 
         rowIdx += 1
-        btnOk.grid               (row=rowIdx, column=0, sticky=EW, padx=4, pady=4, columnspan=4)            
+        btnOk.grid               (row=rowIdx, column=0, sticky=EW, padx=4, pady=4, columnspan=4)
 
-        tooltips = {   
+        tooltips = {
             txtCaption:                "Type your text here.",
             cbxFontFamily:             "Font family. Try selecting this field, then scroll-wheeling over it with your mouse :)",
             spnCaptionFontSize:        "Font point size.",
@@ -6904,7 +6905,7 @@ class GifApp:
             btnOk:                     "Add this caption to the final GIF. Note: You can add up to 16 separate captions.",
         }
 
-        for item, tipString in tooltips.iteritems():
+        for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
         def OnFontUpdate(*args):
@@ -6917,12 +6918,12 @@ class GifApp:
                 cbxStyle["values"] = fonts.GetFontAttributeList(fontFamily.get())
                 cbxStyle.current(0)
 
-            previewFont = tkFont.Font(family=fontFamily.get(), size=14)
+            previewFont = tkinter.font.Font(family=fontFamily.get(), size=14)
 
             if fontStyle.get().find("Italic") != -1:
-                previewFont.configure(slant=tkFont.ITALIC)
+                previewFont.configure(slant=tkinter.font.ITALIC)
             if fontStyle.get().find('Bold') != -1:
-                previewFont.configure(weight=tkFont.BOLD)
+                previewFont.configure(weight=tkinter.font.BOLD)
 
             lblFontPreview.configure(font=previewFont)
 
@@ -6938,7 +6939,7 @@ class GifApp:
             self.OnCaptionConfigDefaults["defaultApplyFxToText"]= applyFxToText.get()
 
             return True
-        
+
         def OnSelectCaptionColor():
             (colorRgb, colorHex) = askcolor(parent=self.parent, initialcolor=lblFontPreview["fg"], title='Choose Caption Color')
             lblFontPreview.configure(fg=colorHex)
@@ -6967,8 +6968,8 @@ class GifApp:
             # Check for unsupported unicode
             try:
                 caption.encode(locale.getpreferredencoding())
-            except UnicodeError, e:
-                tkMessageBox.showinfo("Invalid Characters Detected", "Warning: Your caption contains invalid characters that don't exist in your locale's encoding (" + locale.getpreferredencoding() + "). Please remove unprintable characters before generating GIF.\n\n" + str(e))
+            except UnicodeError as e:
+                tkinter.messagebox.showinfo("Invalid Characters Detected", "Warning: Your caption contains invalid characters that don't exist in your locale's encoding (" + locale.getpreferredencoding() + "). Please remove unprintable characters before generating GIF.\n\n" + str(e))
 
             caption = caption.replace("\n",'[enter]')
 
@@ -6977,7 +6978,7 @@ class GifApp:
             if len(caption) <= 0:
                 self.captionChanges += self.conf.SetParam(confName, "text",              "")
                 self.captionChanges += self.conf.SetParam(confName, "font",              "")
-                self.captionChanges += self.conf.SetParam(confName, "style",             "")                
+                self.captionChanges += self.conf.SetParam(confName, "style",             "")
                 self.captionChanges += self.conf.SetParam(confName, "size",              "")
                 self.captionChanges += self.conf.SetParam(confName, "frameStart",        "")
                 self.captionChanges += self.conf.SetParam(confName, "frameEnd",          "")
@@ -6996,7 +6997,7 @@ class GifApp:
             else:
                 self.captionChanges += self.conf.SetParam(confName, "text",              caption)
                 self.captionChanges += self.conf.SetParam(confName, "font",              fontFamily.get())
-                self.captionChanges += self.conf.SetParam(confName, "style",             fontStyle.get())                
+                self.captionChanges += self.conf.SetParam(confName, "style",             fontStyle.get())
                 self.captionChanges += self.conf.SetParam(confName, "size",              spnCaptionFontSize.get())
                 self.captionChanges += self.conf.SetParam(confName, "frameStart",        sclStartFrame.get())
                 self.captionChanges += self.conf.SetParam(confName, "frameEnd",          sclEndFrame.get())
@@ -7163,7 +7164,7 @@ def tkErrorCatcher(self, *args):
         lastErrorTimestamp = time.time()
     else:
         showGuiMessage = False
-    
+
     err = traceback.format_exception(*args)
 
     logging.error("Error trace:")
@@ -7175,7 +7176,7 @@ def tkErrorCatcher(self, *args):
             showGuiMessage = False
 
     if showGuiMessage:
-        openBugReport = tkMessageBox.askyesno("Oh crap, this is embarrasing!",
+        openBugReport = tkinter.messagebox.askyesno("Oh crap, this is embarrasing!",
                                               "A problem occurred somewhere in the Instagiffer code. Please go to Help -> Generate Bug Report and send it to instagiffer@gmail.com and I'll fix it ASAP. Would you like to open the bug report now?",
                                               default="yes")
 
@@ -7198,7 +7199,7 @@ class InstaCommandLine:
 
         self.videoFileName = None
         self.ParseArguments()
-        
+
     def ParseArguments(self):
         # parser = argparse.ArgumentParser(prog="instagiffer",
         #                                  description="You've discovered the Instagiffer %s command line. You're hardcore!" % (__version__),
@@ -7213,8 +7214,8 @@ class InstaCommandLine:
 
     def GetVideoPath(self):
         if self.videoFileName is not None:
-            logging.info(u"File specified on command line: " + self.videoFileName) 
-            logging.info(u"File exists: %d" % (os.path.exists(self.videoFileName)))
+            logging.info("File specified on command line: " + self.videoFileName)
+            logging.info("File exists: %d" % (os.path.exists(self.videoFileName)))
             return self.videoFileName
         else:
             return None
@@ -7227,24 +7228,24 @@ class InstaCommandLine:
         self.binPath  = os.path.dirname(os.path.realpath(sys.argv[0]))
         self.conf     = InstaConfig(self.binPath + os.sep + 'instagiffer.conf')
         self.workDir  = CreateWorkingDir(self.conf)
-        self.gif      = AnimatedGif(self.conf, self.videoFileName, self.workDir, self.OnShowProgress, None) 
+        self.gif      = AnimatedGif(self.conf, self.videoFileName, self.workDir, self.OnShowProgress, None)
         self.MakeGif()
         return 0
 
     # Progress callback
     def OnShowProgress(self, doneFlag, ignore = None):
         if doneFlag:
-            print " [OK]"
+            print(" [OK]")
         else:
             sys.stdout.write('.')
 
     # Makes a GIF according to current configuration
     def MakeGif(self):
-        print "Extracting frames:"
+        print("Extracting frames:")
         self.gif.ExtractFrames()
-        print "Cropping and resizing:"
+        print("Cropping and resizing:")
         self.gif.CropAndResize()
-        print "Generating GIF:"
+        print("Generating GIF:")
         self.gif.Generate()
 
 
@@ -7298,7 +7299,7 @@ def main():
     cmdlineVideoPath = None
     if ImAPC() and cmdline.ArgsArePresent():
         cmdlineVideoPath = cmdline.GetVideoPath()
-    
+
     # Command line mode or GUI?
 
     if cmdlineBatchMode:
@@ -7318,11 +7319,12 @@ def main():
             logging.info("Unknown OS")
 
         logging.info(sys.version_info)
-        logging.info("App: [" + exeDir + "]. Home: [" + expanduser("~") + "]")
-        logging.info("System Locale: " + str(locale.getdefaultlocale()) + "; Preferred encoding: " + locale.getpreferredencoding())
+        logging.info("App: [%s]. Home: [%s]", exeDir, expanduser('~'))
+        logging.info("System Locale: %s; Preferred encoding: %s",
+                     locale.getdefaultlocale(), locale.getpreferredencoding())
 
         root = Tk()
-        app  = GifApp(root, cmdlineVideoPath)
+        _app  = GifApp(root, cmdlineVideoPath)
 
         root.mainloop()
 
@@ -7334,4 +7336,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

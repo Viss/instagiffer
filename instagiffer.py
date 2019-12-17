@@ -58,7 +58,7 @@ from os.path import expanduser
 from configparser import SafeConfigParser, RawConfigParser
 from threading  import Thread
 from queue import Queue
-from fractions import gcd
+from math import gcd
 
 # TK
 import tkinter.ttk
@@ -84,6 +84,12 @@ except ImportError:
     pass
 
 
+import gifferlib
+
+# # debugging
+# fmt = '[%(asctime)s] p%(process)s {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s'
+# logging.basicConfig(format=fmt, level=logging.INFO)
+
 # Only use odd-numbered minor revisions for pre-release builds
 INSTAGIFFER_VERSION = "1.77"
 # If not a pre-release set to "", else set to "pre-X"
@@ -96,7 +102,7 @@ __email__        = "instagiffer@gmail.com"
 __imgurcid__     = "58fc34d08ab311d"
 __status__       = "Production"
 __version__      = INSTAGIFFER_VERSION+INSTAGIFFER_PRERELEASE
-__release__      = True  # If this is false, bindep output, and info-level statements will be displayed stdout
+__release__      = False # If this is false, bindep output, and info-level statements will be displayed stdout
 __changelogUrl__ = "http://instagiffer.com/post/146636589471/instagiffer-175-macpc"
 __faqUrl__       = "http://www.instagiffer.com/post/51787746324/frequently-asked-questions"
 
@@ -147,6 +153,9 @@ def AudioPlay(wavPath):
             winsound.PlaySound(None, 0)
         else:
             winsound.PlaySound(wavPath, winsound.SND_FILENAME|winsound.SND_ASYNC)
+    else:  # linux @leanrum (works on my machine) TODO change this shit
+        if wavPath is not None:
+            subprocess.call(["afplay", wavPath]) # blocks
 
     return True
 
@@ -218,8 +227,12 @@ def norecurse(func):
 #
 
 def DurationStrToMillisec(str, throwParseError=False):
+    try:
+        return float(str) * 1000
+    except ValueError:
+        pass
     if str is not None:
-        r      = re.compile('[^0-9]+')
+        r      = re.compile('[^\d]+')
         tokens = r.split(str)
         vidLen = ((int(tokens[0]) * 3600) + (int(tokens[1]) * 60) + (int(tokens[2]))) * 1000 + int(tokens[3])
         return vidLen
@@ -274,26 +287,27 @@ def DefaultOutputHandler(stdoutLines, stderrLines, cmd):
     i = False
 
     for outData in [stdoutLines, stderrLines, cmd]:
-        if outData is None or len(outData) == 0:
+        if not outData:
             continue
 
-        if ImAMac() and type(outData) == list:
-            outData = " ".join('"{0}"'.format(arg) for arg in outData)
+        if isinstance(outData, list):
+            outData = " ".join(outData).encode('ascii')
 
         # youtube dl
-        youtubeDlSearch = re.search(r'\[download\]\s+([0-9\.]+)% of', outData, re.MULTILINE)
+
+        youtubeDlSearch = re.search(rb'\[download\]\s+([0-9\.]+)% of', outData, re.MULTILINE)
         if youtubeDlSearch:
             i = int(float(youtubeDlSearch.group(1)))
             s = "Downloaded %d%%..." % (i)
 
         # ffmpeg frame extraction progress
-        ffmpegSearch = re.search(r'frame=.+time=(\d+:\d+:\d+\.\d+)', outData, re.MULTILINE)
+        ffmpegSearch = re.search(rb'frame=.+time=(\d+:\d+:\d+\.\d+)', outData, re.MULTILINE)
         if ffmpegSearch:
             secs = DurationStrToMillisec(ffmpegSearch.group(1))
             s = "Extracted %.1f seconds..." % (secs/1000.0)
 
         # imagemagick - figure out what we're doing based on comments
-        imSearch = re.search(r'^".+(convert\.exe|convert)".+-comment"? "([^"]+):(\d+)"', outData)
+        imSearch = re.search(rb'^".+(convert\.exe|convert)".+-comment"? "([^"]+):(\d+)"', outData)
         if imSearch:
             n = int(imSearch.group(3))
 
@@ -308,11 +322,6 @@ def DefaultOutputHandler(stdoutLines, stderrLines, cmd):
 
 ON_POSIX = 'posix' in sys.builtin_module_names
 
-def EnqueueProcessOutput(streamId, inStream, outQueue):
-    for line in iter(inStream.readline, b''):
-        #logging.info(streamId + ": " + line)
-        outQueue.put(line)
-
 
 #
 # Prompt User
@@ -326,17 +335,7 @@ def NotifyUser(title, msg):
 
 def RunProcess(cmd, callback = None, returnOutput = False, callBackFinalize = True, outputTranslator = DefaultOutputHandler):
     if not __release__:
-        logging.info("Running Command: " + cmd)
-
-    try:
-        cmd = cmd.encode(locale.getpreferredencoding())
-    except UnicodeError:
-        logging.error("RunProcess: Command '" + cmd + "' contained undecodable unicode. Local encoding: " + str(locale.getpreferredencoding()))
-
-        if returnOutput:
-            return "",""
-        else:
-            return False
+        logging.info("Running Command: %s", cmd)
 
     env = os.environ.copy()
 
@@ -344,18 +343,22 @@ def RunProcess(cmd, callback = None, returnOutput = False, callBackFinalize = Tr
         startupinfo              = subprocess.STARTUPINFO()
         startupinfo.dwFlags     |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow  = subprocess.SW_HIDE
-    elif ImAMac():
+    else:
         startupinfo = None
-        cmd         = shlex.split(cmd)
+        if isinstance(cmd, str):
+            cmd = shlex.split(cmd)
 
-    pipe  = subprocess.Popen(cmd, startupinfo=startupinfo, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, bufsize=1, close_fds=ON_POSIX)
+    pipe  = subprocess.Popen(
+        cmd, startupinfo=startupinfo, shell=False,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=env, bufsize=1, close_fds=ON_POSIX)
     qOut  = Queue()
     qErr  = Queue()
-    tOut  = Thread(target=EnqueueProcessOutput, args=("OUT", pipe.stdout, qOut))
-    tErr  = Thread(target=EnqueueProcessOutput, args=("ERR", pipe.stderr, qErr))
+    for line in pipe.stdout.readlines():
+        qOut.put(line)
+    for line in pipe.stderr.readlines():
+        qErr.put(line)
 
-    tOut.start()
-    tErr.start()
 
     callbackReturnedFalse = False
 
@@ -427,7 +430,11 @@ def RunProcess(cmd, callback = None, returnOutput = False, callBackFinalize = Tr
         logging.error("Encountered error communicating with sub-process" + str(e))
 
     success = (pipe.returncode == 0)
+    if isinstance(remainingStdout, bytes):
+        remainingStdout = remainingStdout.decode('ascii')
     stdout += remainingStdout
+    if isinstance(remainingStderr, bytes):
+        remainingStderr = remainingStderr.decode('ascii')
     stderr += remainingStderr
 
     # Logging
@@ -659,13 +666,16 @@ class ImagemagickFont:
             fontStretch = font[3].strip()
             fontWeight  = font[4].strip()
 
+            # print(f'{fontFamily=}\n
+
 
             try:
-                fontFamily.decode('ascii')
-                fontId.decode('ascii')
-                fontFile.decode('ascii')
-            except:
+                fontFamily
+                fontId
+                fontFile
+            except Exception as e:
                 logging.error("Unable to load font: " + fontFamily)
+                logging.error('Error: %s', e)
                 continue
 
             # ignore stretched fonts, and styles other than italic, and weights we don't know about
@@ -1040,8 +1050,8 @@ class AnimatedGif:
             self.FatalError("imagemagick convert not found")
         elif not os.path.exists(self.conf.GetParam('paths','youtubedl')):
             self.FatalError("Youtube-dl not found")
-        # elif not os.path.exists(self.conf.GetParam('paths','gifsicle')):
-        #     self.FatalError("gifsicle not found")
+        elif not os.path.exists(self.conf.GetParam('paths','gifsicle')):
+            self.FatalError("gifsicle not found")
         elif self.videoPath is not None and not os.path.exists(self.videoPath):
             self.FatalError("Local video file '" + self.videoPath + "' does not exist")
 
@@ -1066,9 +1076,11 @@ class AnimatedGif:
                 runCallback = self.callback
                 statBarCB   = FontConfOutHandler
 
-        cmdListFonts       = '"%s" -list font' % (self.conf.GetParam('paths', 'convert'))
-        (fontsOutput, err) = RunProcess(cmdListFonts, callback=runCallback, returnOutput=True, outputTranslator=statBarCB)
+        cmdListFonts       = '"%s" -list font' % (self.conf.GetParam('paths', 'convert') or 'convert')
+        # (fontsOutput, err) = RunProcess(cmdListFonts, callback=runCallback, returnOutput=True, outputTranslator=statBarCB)
+        fontsOutput = subprocess.getoutput(cmdListFonts)
         self.fonts         = ImagemagickFont(fontsOutput)
+        print(self.fonts)
 
         return True
 
@@ -1495,58 +1507,70 @@ class AnimatedGif:
         if not os.path.exists(mediaPath):
             self.FatalError("'" + mediaPath + "' does not exist!")
 
-        stdout, stderr = RunProcess('"' + self.conf.GetParam('paths','ffmpeg') + '" -i "' + CleanupPath(mediaPath) + '"', None, True)
+        ffprobe_bin = self.conf.GetParam('paths', 'ffprobe')
+        media_path = CleanupPath(mediaPath)
 
-        pattern = re.compile(r'Stream.*Video.* ([0-9]+)x([0-9]+)')
-        match   = pattern.search(stderr)
-
-        if match:
-                w, h = list(map(int, match.groups()[0:2]))
-                self.videoWidth = w
-                self.videoHeight = h
-        else:
+        try:
+            w, h = gifferlib.ffprobe(
+                ffprobe_bin, media_path,
+                ['width', 'height'])
+            self.videoWidth = w
+            self.videoHeight = h
+        except gifferlib.FFProbeError:
             self.FatalError("Unable to get video width and height parameters.")
 
-        # Display aspect ratio - non square pixels
-        pattern = re.compile(r'Stream #0.+Video.+\[SAR (\d+):(\d+) DAR (\d+):(\d+)\]') # older versions of ffmpeg
-        match   = pattern.search(stderr)
 
-        if match:
-            sarX, sarY, darX, darY = list(map(int, match.groups()[0:4]))
+        try:
+            sar, dar = gifferlib.ffprobe(
+                ffprobe_bin, media_path,
+                ['sample_aspect_ratio', 'display_aspect_ratio'])
+            sarX, sarY = map(int, sar.split(':'))
+            darX, darY = map(int, dar.split(':'))
 
             rDar = darX/float(darY)
             rSar = sarX/float(sarY)
 
             if rSar != 1.0 and rDar != rSar:
-                logging.info("Storage aspect ratio (%.2f) differs from display aspect ratio (%.2f)" % (rSar, rDar))
+                msg = "Storage aspect ratio (%.2f) differs from display aspect ratio (%.2f)"
+                logging.info(msg, rSar, rDar)
                 self.videoWidth = self.videoHeight * rDar
+        except gifferlib.FFProbeError:
+            logging.info('No aspect ratio information')
 
         # Side Rotation
-        pattern = re.compile(r'\s+rotate\s+:\s+(90|270|-90|-270)')
-        match   = pattern.search(stderr)
+        # TODO fix this, use :stream_tags=rotate to get side rotation
+        # pattern = re.compile(r'\s+rotate\s+:\s+(90|270|-90|-270)')
+        # match   = pattern.search(output)
 
-        if match:
-            logging.info("Side rotation detected")
-            rotation = int(match.groups()[0])
-            self.videoWidth, self.videoHeight = self.videoHeight, self.videoWidth
+        # if match:
+        #     logging.info("Side rotation detected")
+        #     rotation = int(match.groups()[0])
+        #     self.videoWidth, self.videoHeight = self.videoHeight, self.videoWidth
 
         # Try to get length
-        pattern = re.compile(r'Duration: ([0-9\.:]+),')
-        match   = pattern.search(stderr)
-
-        if self.videoPath and match:
-            self.videoLength = match.groups()[0]
+        try:
+            duration = gifferlib.ffprobe(
+                ffprobe_bin, media_path,
+                'duration').pop()
+            if self.videoPath:
+                self.videoLength = duration
+        except gifferlib.FFProbeError:
+            pass
 
         # Try to get fps
-        pattern = re.compile(r'Video:.+?([0-9\.]+) tbr')
-        match   = pattern.search(stderr)
-
-        if self.videoPath and match:
-            self.videoFps = match.groups()[0]
-        elif self.videoFps <= 0.0:
+        try:
+            framerate = gifferlib.ffprobe(
+                ffprobe_bin, media_path,
+                'avg_frame_rate')
+            a, b = map(int, framerate[0].split('/'))
+            if self.videoPath:
+                self.videoFps = a / b
+        except (gifferlib.FFProbeError, ZeroDivisionError):
             self.videoFps = 10.0
             logging.info("Unable to determine frame rate! Arbitrarily setting it to %d" % (self.videoFps))
 
+        print(f'{self.GetVideoWidth()=} {self.GetVideoHeight()=}')
+        print(f'{self.GetVideoFps()=}')
         logging.info("Video Parameters: %dx%d (%d:%d or %0.3f:1); %d fps" % (
                 self.GetVideoWidth(),
                 self.GetVideoHeight(),
@@ -2468,9 +2492,6 @@ class AnimatedGif:
 
 
     def ImageProcessing(self, previewFrameIdx=-1):
-        # Dump the settings
-        # if __release__ == False:
-        #     self.conf.Dump()
 
         if previewFrameIdx >= 0:
             genPreview = True
@@ -3038,6 +3059,7 @@ class GifApp:
         self.maskEdited           = False
         self.trackBarTs           = 0
 
+        self.lastProcessTsByLevel = [0, 0, 0, 0]
 
         # self.cropWidth            = "0"
         # self.cropHeight           = "0"
@@ -3135,7 +3157,7 @@ class GifApp:
             self.guiConf['guiPadding']        = 9
             self.guiConf['timeSpinboxWidth']  = 3
             self.guiConf['fileEntryWidth']    = 119
-            self.guiConf['canvasWidth']       = 400
+            self.guiConf['canvasWidth']       = 650
             self.guiConf['canvasSliderWidth'] = self.guiConf['canvasWidth'] - 63
             self.guiConf['mainSliderHeight']  = 16
             self.guiConf['mainSliderWidth']   = 400 - (self.guiConf['guiPadding']-3) * 2
@@ -3858,8 +3880,8 @@ class GifApp:
         widget.update_idletasks()
         width  = widget.winfo_width()
         height = widget.winfo_height()
-        x      = (widget.winfo_screenwidth() / 2) - (width / 2)
-        y      = (widget.winfo_screenheight() / 2) - (height / 2)
+        x      = (widget.winfo_screenwidth() // 2) - (width // 2)
+        y      = (widget.winfo_screenheight() // 2) - (height // 2)
         widget.geometry('{0}x{1}+{2}+{3}'.format(width, height, x, y))
 
     def InitializeCropTool(self):
@@ -4439,7 +4461,7 @@ class GifApp:
         #
         # Set the maximum slider value for smoothness (FPS). Should not be able to set greater than the source material's fps
         #
-        fps = self.conf.GetParam('rate', 'maxFrameRate')
+        fps = int(self.conf.GetParam('rate', 'maxFrameRate'))
 
         if self.gif is not None and self.gif.GetVideoFps() < fps:
             fps = self.gif.GetVideoFps()
@@ -5078,7 +5100,7 @@ class GifApp:
                 self.Alert("Language Issue Detected", "Instagiffer is having trouble with your language. Please generate a bug report and send it to instagiffer@gmail.com. This issue is a top priority! Sorry for the inconvenience!")
                 logging.error(errStr)
             else:
-                self.Alert("A Problem Occurred", "Error: %s\n\nIf you think this is a bug, please generate a bug report and send it to instagiffer@gmail.com." % errStr)
+                self.Alert("A Problem Occurred", "Error: %s" % errStr)
 
             self.SetStatus("Failed to load video!")
             self.ResetInputs()
@@ -5092,7 +5114,7 @@ class GifApp:
         popupWindow = Toplevel(parent)
         popupWindow.withdraw()
         popupWindow.title(title)
-        popupWindow.wm_iconbitmap('instagiffer.ico')
+        # popupWindow.wm_iconbitmap('instagiffer.ico')
         #popupWindow.transient(self.mainFrame)         #
 
         if not resizable:

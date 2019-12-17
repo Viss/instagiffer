@@ -979,6 +979,16 @@ class AnimatedGif:
 
                 os.system(scrCapCmd)
 
+            else:
+                # @leanrum use grim here cause that works on my machine
+                # TODO this *should* check for screen grabbing software
+                # and use what's available, in the order I deem best to
+                # worst software
+                capFileName += '.png'
+                scrCapCmd = f'grim {capFileName}'
+                os.system(scrCapCmd)
+
+
             self.imageSequence.append(capFileName)
             imgIdx += 1
             self.callback(False)
@@ -1531,7 +1541,7 @@ class AnimatedGif:
                 msg = "Storage aspect ratio (%.2f) differs from display aspect ratio (%.2f)"
                 logging.info(msg, rSar, rDar)
                 self.videoWidth = self.videoHeight * rDar
-        except gifferlib.FFProbeError:
+        except (gifferlib.FFProbeError, ValueError):
             logging.info('No aspect ratio information')
 
         # Side Rotation

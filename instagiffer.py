@@ -55,7 +55,7 @@ import shlex
 import traceback
 from random import randrange
 from os.path import expanduser
-from configparser import SafeConfigParser, RawConfigParser
+from configparser import ConfigParser, RawConfigParser
 from threading  import Thread
 from queue import Queue
 from fractions import gcd
@@ -530,7 +530,7 @@ class InstaConfig:
 
     def ReloadFromFile(self):
         self.config = None
-        self.config = SafeConfigParser()
+        self.config = ConfigParser()
         self.config.read(self.path)
 
     def ParamExists(self, category, key):

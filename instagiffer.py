@@ -666,9 +666,6 @@ class ImagemagickFont:
             fontStretch = font[3].strip()
             fontWeight  = font[4].strip()
 
-            # print(f'{fontFamily=}\n
-
-
             try:
                 fontFamily
                 fontId
@@ -1569,8 +1566,6 @@ class AnimatedGif:
             self.videoFps = 10.0
             logging.info("Unable to determine frame rate! Arbitrarily setting it to %d" % (self.videoFps))
 
-        print(f'{self.GetVideoWidth()=} {self.GetVideoHeight()=}')
-        print(f'{self.GetVideoFps()=}')
         logging.info("Video Parameters: %dx%d (%d:%d or %0.3f:1); %d fps" % (
                 self.GetVideoWidth(),
                 self.GetVideoHeight(),
@@ -1601,7 +1596,7 @@ class AnimatedGif:
         files = glob.glob(self.GetResizedImagesDir() + '*')
         for f in files:
             if idx is not None:
-                origFiles = self.GetExtractedImageList()
+                origFiles = sorted(self.GetExtractedImageList())
                 f = self.GetResizedImagesDir() + os.path.basename(origFiles[idx-1])
                 return f
                 # doesn't handle deleted frames - DOESNT WORK

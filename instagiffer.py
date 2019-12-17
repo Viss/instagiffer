@@ -2492,9 +2492,6 @@ class AnimatedGif:
 
 
     def ImageProcessing(self, previewFrameIdx=-1):
-        # Dump the settings
-        # if __release__ == False:
-        #     self.conf.Dump()
 
         if previewFrameIdx >= 0:
             genPreview = True

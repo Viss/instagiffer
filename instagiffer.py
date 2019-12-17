@@ -227,8 +227,12 @@ def norecurse(func):
 #
 
 def DurationStrToMillisec(str, throwParseError=False):
+    try:
+        return float(str) * 1000
+    except ValueError:
+        pass
     if str is not None:
-        r      = re.compile('[^0-9]+')
+        r      = re.compile('[^\d]+')
         tokens = r.split(str)
         vidLen = ((int(tokens[0]) * 3600) + (int(tokens[1]) * 60) + (int(tokens[2]))) * 1000 + int(tokens[3])
         return vidLen
@@ -662,13 +666,16 @@ class ImagemagickFont:
             fontStretch = font[3].strip()
             fontWeight  = font[4].strip()
 
+            # print(f'{fontFamily=}\n
+
 
             try:
-                fontFamily.decode('ascii')
-                fontId.decode('ascii')
-                fontFile.decode('ascii')
-            except:
+                fontFamily
+                fontId
+                fontFile
+            except Exception as e:
                 logging.error("Unable to load font: " + fontFamily)
+                logging.error('Error: %s', e)
                 continue
 
             # ignore stretched fonts, and styles other than italic, and weights we don't know about
@@ -1070,8 +1077,10 @@ class AnimatedGif:
                 statBarCB   = FontConfOutHandler
 
         cmdListFonts       = '"%s" -list font' % (self.conf.GetParam('paths', 'convert') or 'convert')
-        (fontsOutput, err) = RunProcess(cmdListFonts, callback=runCallback, returnOutput=True, outputTranslator=statBarCB)
+        # (fontsOutput, err) = RunProcess(cmdListFonts, callback=runCallback, returnOutput=True, outputTranslator=statBarCB)
+        fontsOutput = subprocess.getoutput(cmdListFonts)
         self.fonts         = ImagemagickFont(fontsOutput)
+        print(self.fonts)
 
         return True
 
@@ -1542,7 +1551,7 @@ class AnimatedGif:
         try:
             duration = gifferlib.ffprobe(
                 ffprobe_bin, media_path,
-                'duration')
+                'duration').pop()
             if self.videoPath:
                 self.videoLength = duration
         except gifferlib.FFProbeError:
@@ -1553,16 +1562,15 @@ class AnimatedGif:
             framerate = gifferlib.ffprobe(
                 ffprobe_bin, media_path,
                 'avg_frame_rate')
-            print(f'{framerate=}')
             a, b = map(int, framerate[0].split('/'))
-            print(f'{a=} {b=}')
             if self.videoPath:
                 self.videoFps = a / b
         except (gifferlib.FFProbeError, ZeroDivisionError):
             self.videoFps = 10.0
             logging.info("Unable to determine frame rate! Arbitrarily setting it to %d" % (self.videoFps))
 
-        print(f'{self.GetVideoWidth()=} {self.GetVideoHeight()}')
+        print(f'{self.GetVideoWidth()=} {self.GetVideoHeight()=}')
+        print(f'{self.GetVideoFps()=}')
         logging.info("Video Parameters: %dx%d (%d:%d or %0.3f:1); %d fps" % (
                 self.GetVideoWidth(),
                 self.GetVideoHeight(),
@@ -3054,6 +3062,7 @@ class GifApp:
         self.maskEdited           = False
         self.trackBarTs           = 0
 
+        self.lastProcessTsByLevel = [0, 0, 0, 0]
 
         # self.cropWidth            = "0"
         # self.cropHeight           = "0"
@@ -3151,7 +3160,7 @@ class GifApp:
             self.guiConf['guiPadding']        = 9
             self.guiConf['timeSpinboxWidth']  = 3
             self.guiConf['fileEntryWidth']    = 119
-            self.guiConf['canvasWidth']       = 400
+            self.guiConf['canvasWidth']       = 650
             self.guiConf['canvasSliderWidth'] = self.guiConf['canvasWidth'] - 63
             self.guiConf['mainSliderHeight']  = 16
             self.guiConf['mainSliderWidth']   = 400 - (self.guiConf['guiPadding']-3) * 2
@@ -4455,7 +4464,7 @@ class GifApp:
         #
         # Set the maximum slider value for smoothness (FPS). Should not be able to set greater than the source material's fps
         #
-        fps = self.conf.GetParam('rate', 'maxFrameRate')
+        fps = int(self.conf.GetParam('rate', 'maxFrameRate'))
 
         if self.gif is not None and self.gif.GetVideoFps() < fps:
             fps = self.gif.GetVideoFps()
@@ -5108,7 +5117,7 @@ class GifApp:
         popupWindow = Toplevel(parent)
         popupWindow.withdraw()
         popupWindow.title(title)
-        popupWindow.wm_iconbitmap('instagiffer.ico')
+        # popupWindow.wm_iconbitmap('instagiffer.ico')
         #popupWindow.transient(self.mainFrame)         #
 
         if not resizable:

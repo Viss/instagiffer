@@ -129,7 +129,7 @@ def OpenFileWithDefaultApp(fileName):
     else:
         try:
             os.startfile(fileName)
-        except:
+        except Exception:
             msg = "Unable to open! "
             msg += f"I wasn't allowed to open '{fileName}'. "
             msg += "You will need to perform this task manually."
@@ -137,10 +137,7 @@ def OpenFileWithDefaultApp(fileName):
 
 
 def GetFileExtension(filename):
-    try:
-        fname, fext = os.path.splitext(filename)
-    except:
-        return ""
+    _, fext = os.path.splitext(filename)
 
     if fext is None:
         return ""
@@ -695,15 +692,6 @@ class ImagemagickFont:
             fontStretch = font[3].strip()
             fontWeight = font[4].strip()
 
-            try:
-                fontFamily
-                fontId
-                fontFile
-            except Exception as e:
-                logging.error("Unable to load font: %s", fontFamily)
-                logging.error('Error: %s', e)
-                continue
-
             # ignore stretched fonts, and styles other than italic, and weights we don't know about
             checks = [fontFamily != 'unknown',
                       fontStretch == 'Normal',
@@ -1095,8 +1083,8 @@ class AnimatedGif:
 
     def CheckPaths(self):
         if not os.access(os.path.dirname(self.gifOutPath), os.W_OK):
-            logging.error(
-                "Warning. " + os.path.dirname(self.gifOutPath) + " is not writable")
+            logging.error("Warning. %s is not writable",
+                          os.path.dirname(self.gifOutPath))
 
         if not os.path.exists(self.conf.GetParam('paths', 'ffmpeg')):
             self.FatalError("ffmpeg not found")
@@ -1640,9 +1628,8 @@ class AnimatedGif:
                 "Unable to determine frame rate! Arbitrarily setting it to %d",
                 self.videoFps)
 
-        logging.info("Video Parameters: %dx%d (%d:%d or %0.3f:1); %d fps", (
-            self.GetVideoWidth(),
-            self.GetVideoHeight(),
+        logging.info("Video Parameters: %dx%d (%d:%d or %d:%d or %0.3f:1); %d fps", (
+            self.GetVideoWidth(), self.GetVideoHeight(),
             self.GetVideoWidth()/gcd(self.GetVideoWidth(), self.GetVideoHeight()),
             self.GetVideoHeight()/gcd(self.GetVideoWidth(), self.GetVideoHeight()),
             self.GetVideoWidth()/float(self.GetVideoHeight()),
@@ -1833,7 +1820,7 @@ class AnimatedGif:
         response = json.loads(response.read())
 
         imgUrl = str(response['data']['link'])
-        logging.info("Imgur URL: " + imgUrl)
+        logging.info("Imgur URL: %s", imgUrl)
 
         if self.rootWindow is not None:
             self.rootWindow.clipboard_clear()
@@ -2071,8 +2058,8 @@ class AnimatedGif:
             if startTimeStr.lower() == 'random':
                 vidLenMs = DurationStrToMillisec(self.videoLength)
                 startTimeStr = MillisecToDurationStr(randrange(vidLenMs))
-                logging.info(
-                    "Pick random start time between 0 and %d ms -> %s" % (vidLenMs, startTimeStr))
+                logging.info("Pick random start time between 0 and %d ms -> %s",
+                             vidLenMs, startTimeStr)
 
             # Grab the previous second. This is where the error is found
             if self.conf.GetParamBool('settings', 'fixSlowdownGlitch'):
@@ -2083,8 +2070,8 @@ class AnimatedGif:
                     startTimeStr = MillisecToDurationStr(startTimeMs)
                     durationSec = durationSec + 2.0
                     doDeglitch = True
-                    logging.info("Fixing FPS glitch. New start time: " +
-                                 startTimeStr + "; New duration: " + str(durationSec))
+                    logging.info("Fixing FPS glitch. New start time: %s; New duration: %s",
+                                 startTimeStr, durationSec)
 
             # FFMPEG options (order matters!):
             # -sn: disable subtitles?
@@ -2134,11 +2121,13 @@ class AnimatedGif:
                     if RunProcess(cmdConvert, self.callback, False, False):
                         frameCount += 1
                     else:
-                        logging.error("Unable to convert image '" + os.path.basename(
-                            self.imageSequence[x]) + "' to png. Conversion failed.")
+                        logging.error(
+                            "Unable to convert image '%s' to png. Conversion failed.",
+                            os.path.basename(self.imageSequence[x]))
                 else:
-                    logging.error("Unable to convert image '" + os.path.basename(
-                        self.imageSequence[x]) + "' to png. File not found.")
+                    logging.error(
+                        "Unable to convert image '%s' to png. File not found.",
+                        os.path.basename(self.imageSequence[x]))
 
             self.callback(True)
 
@@ -7693,11 +7682,11 @@ def createToolTip(widget, text):
 
     toolTip = ToolTip(widget)
 
-    def enter(event):
+    def enter(_event):
         toolTip.showtip(text)
         #toolTip.tipwindow.after(400, toolTip.makevisable())
 
-    def leave(event):
+    def leave(_event):
         toolTip.hidetip()
     widget.bind('<Enter>', enter)
     widget.bind('<Leave>', leave)
@@ -7770,8 +7759,7 @@ class InstaCommandLine:
             logging.info("File exists: %d" %
                          (os.path.exists(self.videoFileName)))
             return self.videoFileName
-        else:
-            return None
+        return None
 
     #
     # Coming soon stuff
@@ -7825,7 +7813,6 @@ def main():
     try:
         logging.basicConfig(level=logging.DEBUG,
                             format="%(asctime)s %(levelname)s: %(message)s",
-                            # filename=open(expanduser("~") + 'instagiffer-event.log',
                             filename='instagiffer-event.log',
                             filemode='w')
 

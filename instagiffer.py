@@ -31,7 +31,11 @@
 #
 ###############################################################################
 
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,invalid-name,wildcard-import,unused-wildcard-import
+# pylint: disable=missing-function-docstring,missing-class-docstring
+# pylint: disable=
+#
+#
 """instagiffer.py: The easy way to make GIFs"""
 
 import base64

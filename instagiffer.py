@@ -1172,13 +1172,13 @@ class AnimatedGif:
         else:
             files = self.GetExtractedImageList()
 
-        logging.info("Export frames %d to %d" % (start, end))
+        logging.info("Export frames %d to %d", start, end)
         x = 1
 
         for i in range(start, end + 1):
             fromFile = files[i - 1]
             toFile = "%s%s%04d.png" % (path + os.sep, prefix, x)
-            logging.info("Export %s to %s..." % (fromFile, toFile))
+            logging.info("Export %s to %s...", fromFile, toFile)
 
             try:
                 shutil.copy(fromFile, toFile)
@@ -1215,7 +1215,7 @@ class AnimatedGif:
             self.callback(False)
 
             toFile = "%simage%04d.png" % (directory + os.sep, x)
-            #logging.info("Re-enumerate %s to %s" % (fromFile, toFile))
+            #logging.info("Re-enumerate %s to %s", fromFile, toFile)
             try:
                 shutil.move(fromFile, toFile)
             except:
@@ -1248,7 +1248,7 @@ class AnimatedGif:
         for x in range(0, len(currentImgList)):
             fromFile = GetRenamedName(numImgs - x)
             toFile = GetOrigName(x + 1)
-            logging.info("Move %s to %s" % (fromFile, toFile))
+            logging.info("Move %s to %s", fromFile, toFile)
             shutil.move(fromFile, toFile)
 
         return True
@@ -1378,7 +1378,7 @@ class AnimatedGif:
         for importFile in importedImgList:
             # "%simported_image%04d.png" % (self.GetExtractedImagesDir() + os.sep, x)
             toFile = GetImportFileName(x)
-            logging.info("Copy and resize '%s' to '%s'" % (importFile, toFile))
+            logging.info("Copy and resize '%s' to '%s'", importFile, toFile)
 
             aspectRatioModifier = ""
             if keepAspectRatio:

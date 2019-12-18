@@ -55,7 +55,7 @@ import shlex
 import traceback
 from random import randrange
 from os.path import expanduser
-from configparser import SafeConfigParser, RawConfigParser
+from configparser import ConfigParser, RawConfigParser
 from threading  import Thread
 from queue import Queue
 from math import gcd
@@ -107,12 +107,12 @@ __changelogUrl__ = "http://instagiffer.com/post/146636589471/instagiffer-175-mac
 __faqUrl__       = "http://www.instagiffer.com/post/51787746324/frequently-asked-questions"
 
 
-def ImAMac():
+def is_mac():
     """Return true if running on a MAC"""
     return sys.platform == 'darwin'
 
 
-def ImAPC():
+def is_pc():
     """Return true if running on windows"""
     return sys.platform == 'win32'
 
@@ -145,10 +145,10 @@ def GetFileExtension(filename):
 
 
 def AudioPlay(wavPath):
-    if ImAMac():
+    if is_mac():
         if wavPath is not None:
             subprocess.call(["afplay", wavPath]) # blocks
-    elif ImAPC():
+    elif is_pc():
         if wavPath is None:
             winsound.PlaySound(None, 0)
         else:
@@ -180,7 +180,7 @@ def CleanupPath(path):
     # deal with it. Use short names and paths instead :S
     #
 
-    if ImAPC():
+    if is_pc():
 
         try:
             path.decode('ascii')
@@ -339,7 +339,7 @@ def RunProcess(cmd, callback = None, returnOutput = False, callBackFinalize = Tr
 
     env = os.environ.copy()
 
-    if ImAPC():
+    if is_pc():
         startupinfo              = subprocess.STARTUPINFO()
         startupinfo.dwFlags     |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow  = subprocess.SW_HIDE
@@ -464,7 +464,7 @@ def CreateWorkingDir(conf):
 
     # No temp dir configured
     if tempDir == None or tempDir == '':
-        if ImAMac():
+        if is_mac():
             appDataRoot  = expanduser("~") + '/Library/Application Support/'
             tempDir      = appDataRoot + 'Instagiffer/'
         else:
@@ -495,7 +495,7 @@ def CreateWorkingDir(conf):
 def GetFailSafeDir(conf, badPath):
     path = badPath
 
-    if ImAPC():
+    if is_pc():
         goodPath = conf.GetParam('paths', 'failSafeDir')
         if not os.path.exists(goodPath):
             if tkinter.messagebox.askyesno("Automatically Fix Language Issue?", "It looks like you are using a non-latin locale. Can Instagiffer create directory " + goodPath + " to solve this issue?"):
@@ -537,7 +537,7 @@ class InstaConfig:
 
     def ReloadFromFile(self):
         self.config = None
-        self.config = SafeConfigParser()
+        self.config = ConfigParser()
         self.config.read(self.path)
 
     def ParamExists(self, category, key):
@@ -939,7 +939,7 @@ class AnimatedGif:
             # Filename
             capFileName = self.GetCapturedImagesDir() + 'cap%04d' % (imgIdx)
 
-            if ImAPC():
+            if is_pc():
                 capFileName += '.bmp'
 
                 try:
@@ -967,7 +967,7 @@ class AnimatedGif:
                     #imgDataArray.append(img.tostring()) # PIL
                     imgDataArray.append(img.tobytes()) # PILLOW
 
-            elif ImAMac():
+            elif is_mac():
                 capFileName += '.bmp' # Supported formats: png, bmp jpg
 
                 scrCapCmd  = "screencapture -x "
@@ -994,7 +994,7 @@ class AnimatedGif:
             self.callback(False)
 
         # Post-process
-        if ImAPC():
+        if is_pc():
             if not self.conf.GetParamBool('screencap', 'DirectToDisk'):
                 logging.info("Using fps-optimized screen cap")
 
@@ -1020,7 +1020,7 @@ class AnimatedGif:
 
         # Screen capper for Mac can't crop a specific region, so we need to do it
         # Todo: for some reason, PNG to PNG doesn't work!!
-        if ImAMac():
+        if is_mac():
             for i in range(0, len(self.imageSequence)):
                 newFileName = os.path.dirname(self.imageSequence[i]) + '/' + os.path.splitext(os.path.basename(self.imageSequence[i]))[0] + '.jpg'
 
@@ -1074,7 +1074,7 @@ class AnimatedGif:
         def FontConfOutHandler(unused1, unused2, unused3):
             return "First time running Instagiffer for Mac. Configuring fonts. This will take a few minutes...", None
 
-        if ImAMac():
+        if is_mac():
             fontCacheDir = './macdeps/im/var/cache/fontconfig' #expanduser("~") + '/.cache/fontconfig'
 
             if not os.path.exists(fontCacheDir):
@@ -3119,7 +3119,7 @@ class GifApp:
         else:
             self.parent.title("Instagiffer")
 
-        if ImAPC():
+        if is_pc():
             self.parent.wm_iconbitmap('instagiffer.ico')
 
         frame = Frame(parent)
@@ -3133,7 +3133,7 @@ class GifApp:
         # GUI config. OS-dependant
         #
 
-        if ImAPC():
+        if is_pc():
             # Warning: Don't make the GUI too big, or it may not present
             # correctly on netbooks
 
@@ -3173,7 +3173,7 @@ class GifApp:
         self.menubar = Menu(parent)
 
         # Override Apple menu
-        if ImAMac():
+        if is_mac():
             apple = Menu(self.menubar, name='apple')
             apple.add_command(label="About", command=self.About)
             self.menubar.add_cascade(menu=apple)
@@ -3193,7 +3193,7 @@ class GifApp:
         # Frame
         self.frameMenu = Menu(self.menubar, tearoff=0)
 
-        if ImAPC():
+        if is_pc():
             viewInExternalViewerLabel = "View Frames In Explorer..."
         else:
             viewInExternalViewerLabel = "Reveal Frames in Finder"
@@ -3242,7 +3242,7 @@ class GifApp:
         self.settingsMenu.add_cascade    (label='Youtube Download Quality',  underline=0, menu=self.qualityMenu)
         self.settingsMenu.add_command    (label="Configure Your Logo...",    underline=0, command=self.OnSetLogo)
 
-        if ImAPC():
+        if is_pc():
             self.settingsMenu.add_checkbutton(label="Extra GIF Compression", underline=0, variable=self.fileSizeOptimize, command=self.OnChangeMenuSetting)
 
         # Help
@@ -3306,7 +3306,7 @@ class GifApp:
 
         # Bind context menu (cut & paste) action to video URL text field
 
-        if ImAMac():
+        if is_mac():
             whichRclickMouseButton        = '<Button-2>'
             whichRclickReleaseMouseButton = '<ButtonRelease-2>'
         else:
@@ -3413,7 +3413,7 @@ class GifApp:
 
         self.duration.set(0.1)
 
-        if ImAPC():
+        if is_pc():
             self.spnDuration.bind("<MouseWheel>", self.OnDurationMouseWheel)
 
         valueFontColor = "#353535"
@@ -3627,7 +3627,7 @@ class GifApp:
 
     def ForceSingleInstance(self):
         # Enforced by plist setting in Mac
-        if ImAPC():
+        if is_pc():
             import win32api
             from   win32event import CreateMutex
             from   winerror   import ERROR_ALREADY_EXISTS
@@ -3924,7 +3924,7 @@ class GifApp:
         self.canCropTool.create_rectangle(0, 0, 0, 0, outline="black", fill="red",   width=1, tag='cropSizeBR')
         self.canCropTool.create_rectangle(0, 0, 0, 0, outline="red",   fill="black", width=1, tag='cropMove')
 
-        if ImAMac():
+        if is_mac():
             whichRMouseEvent = '<B2-Motion>'
         else:
             whichRMouseEvent = '<B3-Motion>'
@@ -4383,9 +4383,9 @@ class GifApp:
 
         openExplorerCmd = ""
 
-        if ImAPC():
+        if is_pc():
             openExplorerCmd = 'explorer '
-        elif ImAMac():
+        elif is_mac():
             openExplorerCmd = 'open '
         else:
             openExplorerCmd = 'xdg-open '
@@ -4393,7 +4393,7 @@ class GifApp:
         openExplorerCmd += '"' + self.gif.GetExtractedImagesDir() + '"'
         logging.info("Open in explorer command: " + openExplorerCmd)
 
-        if not ImAPC():
+        if not is_pc():
             openExplorerCmd = shlex.split(openExplorerCmd)
 
         subprocess.Popen(openExplorerCmd)
@@ -4404,7 +4404,7 @@ class GifApp:
 
     def OnRClickPopup(self, event):
         def RClickPaste(event):
-            if ImAMac():
+            if is_mac():
                 pasteAction = '<<Paste>>'
             else:
                 pasteAction = '<Control-v>'
@@ -5011,7 +5011,7 @@ class GifApp:
 
         else:
             fileNames = ()
-            if ImAPC():
+            if is_pc():
                 fileNames = askopenfilename(multiple=multiSelectMode, filetypes=[("Media files", "*.*")], parent=self.parent, title="Find a video or images to GIF")
             else:
                 fileNames = askopenfilename(multiple=multiSelectMode)
@@ -5189,7 +5189,7 @@ class GifApp:
         try:
             # Should the audio be previewed
             soundPath = None
-            if ImAPC() and self.isAudioEnabled.get() and self.HaveAudioPath() and self.gif.GetFinalOutputFormat() != 'gif':
+            if is_pc() and self.isAudioEnabled.get() and self.HaveAudioPath() and self.gif.GetFinalOutputFormat() != 'gif':
                 soundPath = self.gif.GetAudioClipPath()
 
             anim = GifPlayerWidget(popupWindow, filename, frameDelay * 10, isResizable, soundPath)
@@ -5207,7 +5207,7 @@ class GifApp:
             popupWindow.destroy()
 
         lbl = "Location: " + self.gif.GetLastGifOutputPath()
-        if ImAMac() and self.isAudioEnabled and self.HaveAudioPath():
+        if is_mac() and self.isAudioEnabled and self.HaveAudioPath():
             lbl += " \n(Sound not available in this player)"
 
         # Build form componets
@@ -5267,7 +5267,7 @@ class GifApp:
         chkLowFps.grid       (row=1, column=columns, padx=2, pady=2)
         columns += 1
 
-        if ImAMac():
+        if is_mac():
             chkRetina.grid   (row=1, column=columns, padx=2, pady=2)
             columns += 1
         else:
@@ -7285,7 +7285,7 @@ def main():
     os.chdir(exeDir)
 
     # Set environment
-    if ImAMac():
+    if is_mac():
         os.environ['MAGICK_HOME']           = './macdeps/im'
         os.environ['MAGICK_CONFIGURE_PATH'] = './macdeps/im/etc/ImageMagick-6'
         os.environ['FONTCONFIG_PATH']       = './macdeps/im/etc/fonts'
@@ -7324,7 +7324,7 @@ def main():
     cmdline = InstaCommandLine()
     cmdlineBatchMode = False
     cmdlineVideoPath = None
-    if ImAPC() and cmdline.ArgsArePresent():
+    if is_pc() and cmdline.ArgsArePresent():
         cmdlineVideoPath = cmdline.GetVideoPath()
 
     # Command line mode or GUI?
@@ -7338,9 +7338,9 @@ def main():
         Tk.report_callback_exception = tkErrorCatcher
 
         import platform
-        if ImAPC():
+        if is_pc():
             logging.info("OS: " + platform.platform())
-        elif ImAMac():
+        elif is_mac():
             logging.info("OSX Version: " + str(platform.mac_ver()))
         else:
             logging.info("Unknown OS")

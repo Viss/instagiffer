@@ -53,6 +53,7 @@ import random
 import locale
 import shlex
 import traceback
+import platform
 from random import randrange
 from os.path import expanduser
 from configparser import ConfigParser, RawConfigParser
@@ -445,8 +446,7 @@ def RunProcess(cmd, callback=None, returnOutput=False, callBackFinalize=True, ou
         remainingStderr = ""
         remainingStdout, remainingStderr = pipe.communicate()
     except IOError as e:
-        logging.error(
-            "Encountered error communicating with sub-process" + str(e))
+        logging.error("Encountered error communicating with sub-process %s", e)
 
     success = (pipe.returncode == 0)
     if isinstance(remainingStdout, bytes):
@@ -458,9 +458,9 @@ def RunProcess(cmd, callback=None, returnOutput=False, callBackFinalize=True, ou
 
     # Logging
     if not __release__:
-        logging.info("return:  " + str(success))
-        logging.info("stdout:  " + stdout)
-        logging.error("stderr: " + stderr)
+        logging.info("return: %s", success)
+        logging.info("stdout: %s", stdout)
+        logging.error("stderr: %s", stderr)
 
     if returnOutput:
         return stdout, stderr  # , success
@@ -495,17 +495,18 @@ def CreateWorkingDir(conf):
         tempDir.encode(locale.getpreferredencoding())
     except UnicodeError:
         logging.info(
-            "Users home directory is problematic due to non-latin characters: " + tempDir)
+            "Users home directory is problematic due to non-latin characters: %s",
+            tempDir)
         tempDir = GetFailSafeDir(conf, tempDir)
 
     # Try to create temp directory
     if not os.path.exists(tempDir):
         os.makedirs(tempDir)
         if not os.path.exists(tempDir):
-            logging.error("Failed to create working directory: " + tempDir)
+            logging.error("Failed to create working directory: %s", tempDir)
             return ""
 
-    logging.info("Working directory created: " + tempDir)
+    logging.info("Working directory created: %s", tempDir)
     return tempDir
 
 
@@ -553,7 +554,7 @@ class InstaConfig:
 
         # Load configuration file
         if not os.path.exists(self.path):
-            logging.error("Unable to find configuration file: " + self.path)
+            logging.error("Unable to find configuration file: %s", self.path)
 
         self.ReloadFromFile()
 
@@ -653,7 +654,7 @@ class InstaConfig:
             "=== GIF Configuration =========================================")
 
         for cat in self.config._sections:
-            logging.info("%s:" % (str(cat)))
+            logging.info("%s:", str(cat))
 
             for k in self.config._sections[cat]:
                 dumpStr = "  - " + k + ": "
@@ -695,13 +696,16 @@ class ImagemagickFont:
                 fontId
                 fontFile
             except Exception as e:
-                logging.error("Unable to load font: " + fontFamily)
+                logging.error("Unable to load font: %s", fontFamily)
                 logging.error('Error: %s', e)
                 continue
 
             # ignore stretched fonts, and styles other than italic, and weights we don't know about
-            if fontFamily != 'unknown' and fontStretch == "Normal" and (fontStyle == 'Italic' or fontStyle == 'Normal') and (fontWeight == '400' or fontWeight == '700'):
-
+            checks = [fontFamily != 'unknown',
+                      fontStretch == 'Normal',
+                      fontStyle in ('Italic', 'Normal'),
+                      fontWeight in ('400', '700')]
+            if all(checks):
                 overallStyle = None
                 if fontStyle == 'Normal' and fontWeight == '400':
                     overallStyle = "Regular"
@@ -1043,14 +1047,14 @@ class AnimatedGif:
                     if os.path.exists(capPath):
                         frameCount += 1
                     else:
-                        logging.error("Capture file " + capPath +
-                                      " was not saved to disk for some reason")
+                        logging.error("Capture file %s was not saved to disk for some reason",
+                                      capPath)
 
                 # Trim the list to the actual size
                 missingCount = len(self.imageSequence) - frameCount
                 if missingCount != 0:
                     logging.error(
-                        "Not all capture files were accounted for: %d missing " % (missingCount))
+                        "Not all capture files were accounted for: %d missing ", missingCount)
                     self.imageSequence = self.imageSequence[0:min(
                         frameCount, len(self.imageSequence))]
 
@@ -1081,7 +1085,7 @@ class AnimatedGif:
         self.videoLength = "00:00:%02d.000" % (seconds)
         self.videoFps = imgIdx/seconds
         self.callback(True)
-        logging.info("Capture complete. FPS acheived: %f" % (self.videoFps))
+        logging.info("Capture complete. FPS acheived: %f", (self.videoFps))
 
         return True
 
@@ -7817,7 +7821,7 @@ def main():
                             filename='instagiffer-event.log',
                             filemode='w')
 
-    except:
+    except Exception:
         # Oh well. no logging!
         pass
 
@@ -7847,15 +7851,14 @@ def main():
         pass
     else:
         # Start the app.  Gather some diagnostic information about this machine to help with bug reporting
-        logging.info("Starting Instagiffer version " + __version__ + "...")
+        logging.info("Starting Instagiffer version %s...", __version__)
 
         Tk.report_callback_exception = tkErrorCatcher
 
-        import platform
         if is_pc():
-            logging.info("OS: " + platform.platform())
+            logging.info("OS: %s", platform.platform())
         elif is_mac():
-            logging.info("OSX Version: " + str(platform.mac_ver()))
+            logging.info("OSX Version: %s", platform.mac_ver())
         else:
             logging.info("Unknown OS")
 

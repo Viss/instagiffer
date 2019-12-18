@@ -1126,7 +1126,7 @@ class AnimatedGif:
                 NotifyUser(
                     "First Time", "Welcome to Instagiffer for Mac! Before you can use text features, I need to build a font database. This will take a few minutes.")
                 logging.info(
-                    "First run. Need to build font cache first: " + fontCacheDir)
+                    "First run. Need to build font cache first: %s", fontCacheDir)
                 runCallback = self.callback
                 statBarCB = FontConfOutHandler
 
@@ -1208,8 +1208,8 @@ class AnimatedGif:
         x = 1
 
         if len(imageList) > 0:
-            logging.info("Re-enumerate %d files starting with %s" %
-                         (len(imageList), imageList[0]))
+            logging.info("Re-enumerate %d files starting with %s",
+                         len(imageList), imageList[0])
 
         for fromFile in imageList:
             self.callback(False)
@@ -1241,8 +1241,8 @@ class AnimatedGif:
 
         for x in range(0, len(currentImgList)):
             toFile = GetRenamedName(x+1)
-            logging.info("Temporarily rename image %s to %s" %
-                         (currentImgList[x], toFile))
+            logging.info("Temporarily rename image %s to %s",
+                         currentImgList[x], toFile)
             shutil.move(currentImgList[x], toFile)
 
         for x in range(0, len(currentImgList)):
@@ -1287,8 +1287,9 @@ class AnimatedGif:
 
         xfadeLen = xfadeFrames/2
 
-        logging.info("Create cross fade between %d and %d (%d fade frames) - fade length: %d - %d frames total" %
-                     (start, end, xfadeFrames, xfadeLen, totCount))
+        logging.info(
+            "Create cross fade between %d and %d (%d fade frames) - fade length: %d - %d frames total",
+            start, end, xfadeFrames, xfadeLen, totCount)
 
         origImgList = self.GetExtractedImageList()
 
@@ -1301,8 +1302,8 @@ class AnimatedGif:
             fa = origImgList[ia]
             fb = origImgList[ib]
 
-            logging.info('xfade %d with %d by %d percent' %
-                         (ia+1, ib+1, fadePercent))
+            logging.info('xfade %d with %d by %d percent',
+                         ia+1, ib+1, fadePercent)
 
             cmdConvert = '"%s" -comment "Creating cross-fade:%d" "%s" "%s" -alpha on -compose dissolve -define compose:args=%d -composite "%s"' % \
                 (
@@ -1330,7 +1331,7 @@ class AnimatedGif:
         return True
 
     def ImportFrames(self, start, importedImgList, reverseImport, insertAfter, riffleShuffle, keepAspectRatio):
-        logging.info("Import image sequence: " + ", ".join(importedImgList))
+        logging.info("Import image sequence: %s", ", ".join(importedImgList))
 
         importedImgList.sort()
 
@@ -1356,8 +1357,8 @@ class AnimatedGif:
         for x in range(0, len(currentImgList)):
             toFile = "%scurrent_image%04d.png" % (
                 self.GetExtractedImagesDir(), x + 1)
-            logging.info("Temporarily rename image %s to %s" %
-                         (currentImgList[x], toFile))
+            logging.info("Temporarily rename image %s to %s",
+                         currentImgList[x], toFile)
 
             if currentImgList[x] in importedImgList:
                 shutil.copy(currentImgList[x], toFile)
@@ -1472,7 +1473,8 @@ class AnimatedGif:
             gifDir.encode(locale.getpreferredencoding())
         except UnicodeError:
             logging.info(
-                "GIF output directory is problematic due to non-latin characters: " + gifDir)
+                "GIF output directory is problematic due to non-latin characters: %s",
+                gifDir)
             gifDir = GetFailSafeDir(self.conf, gifDir)
 
         return gifDir
@@ -1517,7 +1519,7 @@ class AnimatedGif:
     # Error handler
 
     def FatalError(self, message):
-        logging.error("FatalError occurred in the animation core: " + message)
+        logging.error("FatalError occurred in the animation core: %s", message)
         logging.debug("Stack:")
         for line in traceback.format_stack():
             logging.error(line.strip())
@@ -1566,7 +1568,7 @@ class AnimatedGif:
 
             mediaPath = self.videoPath
 
-        logging.info("Extracting video information from " + mediaPath)
+        logging.info("Extracting video information from %s", mediaPath)
 
         if not os.path.exists(mediaPath):
             self.FatalError("'" + mediaPath + "' does not exist!")
@@ -1631,7 +1633,8 @@ class AnimatedGif:
         except (gifferlib.FFProbeError, ZeroDivisionError):
             self.videoFps = 10.0
             logging.info(
-                "Unable to determine frame rate! Arbitrarily setting it to %d" % (self.videoFps))
+                "Unable to determine frame rate! Arbitrarily setting it to %d",
+                self.videoFps)
 
         logging.info("Video Parameters: %dx%d (%d:%d or %0.3f:1); %d fps", (
             self.GetVideoWidth(),
@@ -4093,7 +4096,7 @@ class GifApp:
 
     def SetStatus(self, status):
         if self.status.cget("text") != status:
-            logging.info("SetStatus: '" + status + "'")
+            logging.info("SetStatus: '%s'", status)
             self.status.config(text=status)
             self.status.update_idletasks()
 

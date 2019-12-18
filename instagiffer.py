@@ -569,10 +569,10 @@ class InstaConfig:
 
         if not key.lower() in self.config._sections[category.lower()]:
             # self.Dump()
-            #logging.error("Configuration parameter %s.%s does not exist" % (category, key))
+            #logging.error("Configuration parameter %s.%s does not exist", category, key)
             return False
         else:
-            #logging.info("Configuration parameter %s.%s exists" % (category, key))
+            #logging.info("Configuration parameter %s.%s exists", category, key)
             return True
 
     def GetParam(self, category, key):
@@ -1085,7 +1085,7 @@ class AnimatedGif:
         self.videoLength = "00:00:%02d.000" % (seconds)
         self.videoFps = imgIdx/seconds
         self.callback(True)
-        logging.info("Capture complete. FPS acheived: %f", (self.videoFps))
+        logging.info("Capture complete. FPS acheived: %f", self.videoFps)
 
         return True
 
@@ -1458,7 +1458,7 @@ class AnimatedGif:
         # Properly name the files
         for x in range(0, len(newImgList)):
             toFile = "%simage%04d.png" % (self.GetExtractedImagesDir(), x + 1)
-            logging.info("Move %s to %s" % (newImgList[x], toFile))
+            logging.info("Move %s to %s", newImgList[x], toFile)
             shutil.move(newImgList[x], toFile)
 
         self.callback(True)
@@ -1633,7 +1633,7 @@ class AnimatedGif:
             logging.info(
                 "Unable to determine frame rate! Arbitrarily setting it to %d" % (self.videoFps))
 
-        logging.info("Video Parameters: %dx%d (%d:%d or %0.3f:1); %d fps" % (
+        logging.info("Video Parameters: %dx%d (%d:%d or %0.3f:1); %d fps", (
             self.GetVideoWidth(),
             self.GetVideoHeight(),
             self.GetVideoWidth()/gcd(self.GetVideoWidth(), self.GetVideoHeight()),
@@ -1693,7 +1693,7 @@ class AnimatedGif:
             try:
                 os.remove(f)
             except:  # WindowsError:
-                logging.error("Can't delete %s" % (f))
+                logging.error("Can't delete %s", f)
 
     def GetExtractedImagesDir(self):
         return self.frameDir + os.sep
@@ -2154,7 +2154,7 @@ class AnimatedGif:
             #self.callback(False, "De-glitch...")
             deleteCount = 2 * int(self.conf.GetParam('rate', 'framerate'))
 
-            logging.info("Deglitch. Remove frames 1 to %d" % deleteCount)
+            logging.info("Deglitch. Remove frames 1 to %d", deleteCount)
 
             for x in range(1, deleteCount + 1):
                 framePath = self.frameDir + os.sep
@@ -2508,7 +2508,7 @@ class AnimatedGif:
         if argFrameIdx is not None:
             files = [files[argFrameIdx]]
             frameIdx = argFrameIdx + 1
-            logging.info("Crop, Resize and Blend frame %d" % (frameIdx))
+            logging.info("Crop, Resize and Blend frame %d", frameIdx)
 
         else:
             logging.info("Crop, Resize and Blend")
@@ -2583,7 +2583,7 @@ class AnimatedGif:
             genPreview = True
             frameIdx = previewFrameIdx + 1
             files = [self.GetResizedImageList(frameIdx)]
-            logging.info("Processing frame %d" % (frameIdx))
+            logging.info("Processing frame %d", frameIdx)
         else:
             genPreview = False
             logging.info("Processing frames")
@@ -3128,8 +3128,9 @@ class GifPlayerWidget(Label):
 
         # window was resized
         if self.resizable and (self.winfo_width() != self.currW or self.winfo_height() != self.currH):
-            logging.info("%s %s => %d %d" % (self.currW, self.currH,
-                                             self.winfo_width(), self.winfo_height()))
+            logging.info("%s %s => %d %d",
+                         self.currW, self.currH,
+                         self.winfo_width(), self.winfo_height())
 
             self.Stop()
             self.LoadImages(True)
@@ -4182,7 +4183,7 @@ class GifApp:
         try:
             imgPath = imgList[arrayIdx]
         except IndexError:
-            logging.error("Error. %d out of range" % (arrayIdx))
+            logging.error("Error. %d out of range", arrayIdx)
             return
 
         (px, py, px2, py2) = self.canCropTool.coords('videoScale')
@@ -7149,7 +7150,7 @@ class GifApp:
         fonts = self.gif.GetFonts()
         isEdit = False
 
-        logging.info("Font count: %d" % (fonts.GetFontCount()))
+        logging.info("Font count: %d", fonts.GetFontCount())
 
         if fonts.GetFontCount() == 0:
             tkinter.messagebox.showinfo(
@@ -7713,7 +7714,7 @@ def tkErrorCatcher(self, *args):
     logging.error("Error trace:")
 
     for errLine in err:
-        logging.error("%s" % (errLine))
+        logging.error("%s", errLine)
 
         if "invalid command name" in errLine:
             showGuiMessage = False

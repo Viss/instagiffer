@@ -56,7 +56,6 @@ import traceback
 from random import randrange
 from os.path import expanduser
 from configparser import ConfigParser, RawConfigParser
-from threading  import Thread
 from queue import Queue
 from math import gcd
 

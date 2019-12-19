@@ -90,10 +90,10 @@ except ImportError:
 import gifferlib
 from gifferlib import is_pc, is_mac, IsUrl, IsPictureFile, CleanupPath
 from gifferlib import RunProcess, DefaultOutputHandler, NotifyUser
-from gifferlib import MillisecToDurationStr, DurationStrToMillisec
+from gifferlib import MillisecToDurationStr, DurationStrToMillisec, DurationStrToSec
 from gifferlib import ReScale, AudioPlay, CreateWorkingDir, GetFileExtension
 from gifferlib import GetFailSafeDir, MillisecToDurationComponents
-from gifferlib import GetLogPath, OpenFileWithDefaultApp, GetIntermediaryFrameFormat
+from gifferlib import GetLogPath, OpenFileWithDefaultApp
 
 
 # # debugging
@@ -4747,8 +4747,7 @@ class GifApp:
                 self.Alert("GIF not found!", "I Can't find the GIF %s" %
                            (self.gif.GetLastGifOutputPath()))
             elif not self.gif.GetProcessedImageList():
-                self.Alert("Frames Not Found", "Processed %s frames not found" % (
-                    self.GetIntermediaryFrameFormat()))
+                self.Alert("Frames Not Found", "Processed frames not found")
             else:
                 if self.gif.GetCompatibilityWarning() and self.gif.CompatibilityWarningsEnabled():
                     self.Alert("Wait! This won't display properly on some social media sites!!",
@@ -5016,7 +5015,7 @@ class GifApp:
     def PlayGif(self, filename, frameDelay):
         if not self.gif:
             self.Alert("Gif Player", "Internal error. Unable to play!")
-            return
+            return None
 
         popupWindow = self.CreateChildDialog("Instagiffer GIF Preview")
 
@@ -5040,7 +5039,7 @@ class GifApp:
         except MemoryError:
             self.Alert(
                 "Gif Player", "Unable to show preview. Your GIF is too big.")
-            return
+            return None
 
         def OnDeletePlayer():
             try:
@@ -5152,7 +5151,7 @@ class GifApp:
 
             return w, h, ww, wh
 
-        def OnResize(event):
+        def OnResize(_event):
             w, h, ww, wh = GetCaptureDimensions()
 
             dimensionStr = "%dx%d" % (w, h)
@@ -5188,7 +5187,7 @@ class GifApp:
             self._screencapXgbl = event.x
             self._screencapYgbl = event.y
 
-        def StopMove(event):
+        def StopMove(_event):
             self._screencapXgbl = None
             self._screencapYgbl = None
 
@@ -5257,9 +5256,9 @@ class GifApp:
                     countDownStr.insert(0, "Capture in %d" % (x))
                     countDownTimeSec.insert(0, 1)
 
-                for i in range(0, len(countDownStr)):
-                    self.SetStatus(countDownStr[i])
-                    lnlCaptureCountdown.configure(text=countDownStr[i])
+                for i, status in enumerate(countDownStr):
+                    self.SetStatus(status)
+                    lnlCaptureCountdown.configure(text=status)
                     self.OnShowProgress(False)
                     time.sleep(countDownTimeSec[i])
 
@@ -5268,8 +5267,9 @@ class GifApp:
             # Make progress bar move
             self.OnShowProgress(True)
             self.OnLoadVideo()
+            return None
 
-        def OnCtrlStartClicked(event):
+        def OnCtrlStartClicked(_event):
             OnStartClicked(True)
 
         # Attach handlers
@@ -5617,8 +5617,8 @@ class GifApp:
 
             btnExport.configure(state="disabled")
 
-            logging.info("Output folder: %s. Write access: %d" %
-                         (outputDir, os.access(outputDir, os.W_OK)))
+            logging.info("Output folder: %s. Write access: %d",
+                         outputDir, os.access(outputDir, os.W_OK))
 
             if outputDir == "":
                 btnExport.configure(state="normal")
@@ -5754,7 +5754,7 @@ class GifApp:
             self.UpdateThumbnailPreview()
             return True
 
-        def OnToggleBlankFrame(*args):
+        def OnToggleBlankFrame(*_args):
             btnImport.configure(text=buttonTitle[blankFrame.get()])
 
         def OnImportClicked():
@@ -6417,7 +6417,7 @@ class GifApp:
     # Effects Configuration
     #
     #
-    def OnEffectsChange(self, *args):
+    def OnEffectsChange(self, *_args):
 
         # Add new fx to this list
         allFx = [self.isGrayScale, self.isSharpened, self.isDesaturated,

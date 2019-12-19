@@ -10,6 +10,7 @@ class FFProbeError(GifferError):
     """FFProbe Error"""
 
 def ffprobe(ffprobe_bin, filename, fields):
+    """Retrieves ffprobe information about a video"""
     if isinstance(fields, str):
         fields = [fields]
 

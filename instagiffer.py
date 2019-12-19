@@ -33,9 +33,11 @@
 
 # pylint: disable=too-many-lines,invalid-name,wildcard-import,unused-wildcard-import
 # pylint: disable=missing-function-docstring,missing-class-docstring
-# pylint: disable=
-#
-#
+# pylint: disable=protected-access,global-statement
+# pylint: disable=too-many-instance-attributes,too-many-public-methods
+# pylint: disable=too-many-arguments,too-many-locals,too-many-branches
+# pylint: disable=too-many-statements,bad-whitespace
+# pylint: disable=line-too-long,bare-except,broad-except
 """instagiffer.py: The easy way to make GIFs"""
 
 import base64
@@ -58,6 +60,7 @@ import locale
 import shlex
 import traceback
 import platform
+import distutils.spawn
 from random import randrange
 from os.path import expanduser
 from configparser import ConfigParser, RawConfigParser
@@ -71,19 +74,15 @@ import tkinter.messagebox
 from tkinter import *
 from tkinter.colorchooser import *
 from tkinter.filedialog import askopenfilename, askdirectory, asksaveasfilename
-
-
 # PIL
 import PIL
 from PIL import Image, ImageTk, ImageFilter, ImageDraw
-
-
 # Win32 specific includes
 try:
-    import winsound
-    import win32api
     # Windows uses the PIL ImageGrab module for screen capture
     from PIL import ImageGrab
+    import winsound
+    import win32api
 except ImportError:
     pass
 
@@ -128,7 +127,7 @@ def OpenFileWithDefaultApp(fileName):
         os.system('open ' + fileName)
     else:
         try:
-            os.startfile(fileName)
+            os.startfile(fileName)  # pylint: disable=no-member
         except Exception:
             msg = "Unable to open! "
             msg += f"I wasn't allowed to open '{fileName}'. "
@@ -223,11 +222,10 @@ def norecurse(func):
         if func.called:
             print("Recursion!")
             return False
-        else:
-            func.called = True
-            result = func(*args, **kwargs)
-            func.called = False
-            return result
+        func.called = True
+        result = func(*args, **kwargs)
+        func.called = False
+        return result
     return f
 
 #
@@ -235,22 +233,21 @@ def norecurse(func):
 #
 
 
-def DurationStrToMillisec(str, throwParseError=False):
+def DurationStrToMillisec(string, throwParseError=False):
     try:
-        return float(str) * 1000
+        return float(string) * 1000
     except ValueError:
         pass
-    if str is not None:
+    if string is not None:
         r = re.compile(r'[^\d]+')
-        tokens = r.split(str)
+        tokens = r.split(string)
         vidLen = ((int(tokens[0]) * 3600) + (int(tokens[1])
                                              * 60) + (int(tokens[2]))) * 1000 + int(tokens[3])
         return vidLen
-    else:
-        if throwParseError:
-            raise ValueError("Invalid duration format")
+    if throwParseError:
+        raise ValueError("Invalid duration format")
 
-        return 0
+    return 0
 
 
 def DurationStrToSec(durationStr):
@@ -258,9 +255,8 @@ def DurationStrToSec(durationStr):
 
     if ms == 0:
         return 0
-    else:
-        # return int((ms + 500) / 1000) # Rouding
-        return int(ms/1000)  # Floor
+    # return int((ms + 500) / 1000) # Rouding
+    return int(ms/1000)  # Floor
 
 
 def MillisecToDurationComponents(msTotal):
@@ -281,9 +277,8 @@ def MillisecToDurationStr(msTotal):
 def CountFilesInDir(dirname, filenamePattern=None):
     if filenamePattern is None:
         return len([name for name in os.listdir(dirname) if os.path.isfile(os.path.join(dirname, name))])
-    else:
-        fileglobber = dirname + filenamePattern + '*'
-        return len(glob.glob(fileglobber))
+    fileglobber = dirname + filenamePattern + '*'
+    return len(glob.glob(fileglobber))
 
 #
 # Run non-blocking
@@ -405,7 +400,7 @@ def RunProcess(cmd, callback=None, returnOutput=False, callBackFinalize=True, ou
             statusStr, percentDoneInt = outputTranslator(
                 stdoutLines, stderrLines, cmd)
 
-            if type(percentDoneInt) == int:
+            if isinstance(percentDoneInt, int):
                 percent = percentDoneInt
             elif percent is not None:
                 percentDoneInt = percent
@@ -414,7 +409,7 @@ def RunProcess(cmd, callback=None, returnOutput=False, callBackFinalize=True, ou
             #    pass
 
         # Caller wants to abort!
-        if callback is not None and callback(percentDoneInt, statusStr) == False:
+        if callback is not None and callback(percentDoneInt, statusStr) is False:
             try:
                 pipe.terminate()
                 pipe.kill()
@@ -465,8 +460,7 @@ def RunProcess(cmd, callback=None, returnOutput=False, callBackFinalize=True, ou
 
     if returnOutput:
         return stdout, stderr  # , success
-    else:
-        return success
+    return success
 
 
 #
@@ -483,7 +477,7 @@ def CreateWorkingDir(conf):
     appDataRoot = ''
 
     # No temp dir configured
-    if tempDir == None or tempDir == '':
+    if not tempDir:
         if is_mac():
             appDataRoot = expanduser("~") + '/Library/Application Support/'
             tempDir = appDataRoot + 'Instagiffer/'
@@ -572,9 +566,8 @@ class InstaConfig:
             # self.Dump()
             #logging.error("Configuration parameter %s.%s does not exist", category, key)
             return False
-        else:
-            #logging.info("Configuration parameter %s.%s exists", category, key)
-            return True
+        #logging.info("Configuration parameter %s.%s exists", category, key)
+        return True
 
     def GetParam(self, category, key):
         retVal = ""
@@ -585,7 +578,7 @@ class InstaConfig:
             retVal = self.config._sections[category.lower(
             ) + '-' + sys.platform][key.lower()]  # platform specific config
 
-        if isinstance(retVal, bool) or isinstance(retVal, int):
+        if isinstance(retVal, (bool, int)):
             return retVal
 
         # We are dealing with strings or unicode
@@ -611,8 +604,8 @@ class InstaConfig:
         boolVal = True
 
         if isinstance(val, int):
-            boolVal = not (val == 0)
-        elif val == None:
+            boolVal = bool(val)
+        elif val is None:
             boolVal = False
         elif val == "":
             boolVal = False
@@ -632,14 +625,13 @@ class InstaConfig:
         self.config._sections[category.lower()][key.lower()] = value
         if value != current:
             return 1
-        else:
-            return 0
+        return 0
 
     def SetParamBool(self, category, key, val):
         boolVal = True
         if isinstance(val, int):
-            boolVal = not (val == 0)
-        elif val == None:
+            boolVal = bool(val)
+        elif val is None:
             boolVal = False
         elif val == "":
             boolVal = False
@@ -687,7 +679,7 @@ class ImagemagickFont:
         for font in fonts:
             fontFamily = font[1].strip()
             fontId = font[0].strip()
-            fontFile = font[5].strip()
+            _fontFile = font[5].strip()
             fontStyle = font[2].strip()
             fontStretch = font[3].strip()
             fontWeight = font[4].strip()
@@ -732,16 +724,15 @@ class ImagemagickFont:
     def GetBestFontFamilyIdx(self, userChoice=""):
         fontFamilyList = self.GetFamilyList()
 
-        if len(userChoice) and userChoice in fontFamilyList:
+        if userChoice and userChoice in fontFamilyList:
             return fontFamilyList.index(userChoice)
-        elif 'Impact' in fontFamilyList:
+        if 'Impact' in fontFamilyList:
             return fontFamilyList.index('Impact')
-        elif 'Arial Rounded MT Bold' in fontFamilyList:
+        if 'Arial Rounded MT Bold' in fontFamilyList:
             return fontFamilyList.index('Arial Rounded MT Bold')
-        elif 'Arial' in fontFamilyList:
+        if 'Arial' in fontFamilyList:
             return fontFamilyList.index('Arial')
-        else:
-            return 0
+        return 0
 
 
 #
@@ -856,7 +847,7 @@ class AnimatedGif:
             "Analyzing the media path to determine what kind of video this is...")
         self.isUrl = IsUrl(mediaLocator)
         captureRe = re.findall(
-            '^::capture ([\.0-9]+) ([\.0-9]+) ([0-9]+)x([0-9]+)\+(\-?[0-9]+)\+(\-?[0-9]+) cursor=(\d+) retina=(\d+) web=(\d+)$', mediaLocator)
+            r'^::capture ([\.0-9]+) ([\.0-9]+) ([0-9]+)x([0-9]+)\+(\-?[0-9]+)\+(\-?[0-9]+) cursor=(\d+) retina=(\d+) web=(\d+)$', mediaLocator)
         isImgSeq = "|" in mediaLocator or IsPictureFile(mediaLocator)
 
         if captureRe and len(captureRe[0]) == 9:
@@ -878,7 +869,7 @@ class AnimatedGif:
             logging.info("Media Locator is an image sequence")
 
             for fname in mediaLocator.split("|"):
-                if len(fname):
+                if fname:
                     self.imageSequence.append(fname)
 
             # Arbitrarily pick an FPS of 10 for image sequences
@@ -897,11 +888,12 @@ class AnimatedGif:
 
         self.GetVideoParameters()
 
-    def ResolveUrlShortcutFile(self, filename):
+    @staticmethod
+    def ResolveUrlShortcutFile(filename):
         """Given a Windows .url filename, returns the main URL, or argument passed in if it can't
         find one."""
 
-        fname, fext = os.path.splitext(filename)
+        _, fext = os.path.splitext(filename)
         if not fext or len(fext) == 0 or str(fext.lower()) != '.url':
             return filename
 
@@ -918,8 +910,7 @@ class AnimatedGif:
         # If there is none, return the BASEURL= value from the [DEFAULT] section.
         if 'baseurl' in list(config.defaults().keys()):
             return config.defaults()['baseurl'].strip('"')
-        else:
-            return filename
+        return filename
 
     def GetConfig(self):
         return self.conf
@@ -984,7 +975,7 @@ class AnimatedGif:
                     # Get mouse cursor position
                     cursorX, cursorY = self.rootWindow.winfo_pointerxy()
 
-                    if cursorX > x and cursorX < x+width and cursorY > y and cursorY < y + height:
+                    if x < cursorX < x+width and y < cursorY < y + height:
                         # Draw Cursor (Just a dot for now)
                         r = 2  # radius
                         draw = ImageDraw.Draw(img)
@@ -1014,9 +1005,11 @@ class AnimatedGif:
                 # TODO this *should* check for screen grabbing software
                 # and use what's available, in the order I deem best to
                 # worst software
-                capFileName += '.png'
-                scrCapCmd = f'grim {capFileName}'
-                os.system(scrCapCmd)
+                grim_bin = distutils.spawn.find_executable('grim')
+                if grim_bin:
+                    capFileName += '.png'
+                    scrCapCmd = f'{grim_bin} {capFileName}'
+                    os.system(scrCapCmd)
 
             self.imageSequence.append(capFileName)
             imgIdx += 1
@@ -1028,13 +1021,13 @@ class AnimatedGif:
                 logging.info("Using fps-optimized screen cap")
 
                 frameCount = 0
-                for x in range(0, len(imgDataArray)):
+                for image in imgDataArray:
                     try:
                         capPath = self.imageSequence[frameCount]
                     except IndexError:
                         break
                     # PIL uses fromstring
-                    PIL.Image.frombytes('RGB', imgDimensions, imgDataArray[x]).resize(
+                    PIL.Image.frombytes('RGB', imgDimensions, image).resize(
                         (int(width*resizeRatio), int(height*resizeRatio)), PIL.Image.ANTIALIAS).save(capPath)
                     if os.path.exists(capPath):
                         frameCount += 1
@@ -1104,10 +1097,10 @@ class AnimatedGif:
     def LoadFonts(self):
         logging.info("Retrieve font list...")
 
-        runCallback = None
-        statBarCB = DefaultOutputHandler
+        _runCallback = None
+        _statBarCB = DefaultOutputHandler
 
-        def FontConfOutHandler(unused1, unused2, unused3):
+        def FontConfOutHandler(_a, _b, _c):
             return "First time running Instagiffer for Mac. Configuring fonts. This will take a few minutes...", None
 
         if is_mac():
@@ -1119,8 +1112,8 @@ class AnimatedGif:
                     "First Time", "Welcome to Instagiffer for Mac! Before you can use text features, I need to build a font database. This will take a few minutes.")
                 logging.info(
                     "First run. Need to build font cache first: %s", fontCacheDir)
-                runCallback = self.callback
-                statBarCB = FontConfOutHandler
+                _runCallback = self.callback
+                _statBarCB = FontConfOutHandler
 
         cmdListFonts = '"%s" -list font' % (
             self.conf.GetParam('paths', 'convert') or 'convert')
@@ -1231,15 +1224,15 @@ class AnimatedGif:
         def GetRenamedName(idx):
             return "%scurrent_image%04d.png" % (self.GetExtractedImagesDir() + os.sep, idx)
 
-        for x in range(0, len(currentImgList)):
-            toFile = GetRenamedName(x+1)
+        for i, img in enumerate(currentImgList):
+            toFile = GetRenamedName(i+1)
             logging.info("Temporarily rename image %s to %s",
-                         currentImgList[x], toFile)
-            shutil.move(currentImgList[x], toFile)
+                         img, toFile)
+            shutil.move(img, toFile)
 
-        for x in range(0, len(currentImgList)):
-            fromFile = GetRenamedName(numImgs - x)
-            toFile = GetOrigName(x + 1)
+        for i, _img in enumerate(currentImgList):
+            fromFile = GetRenamedName(numImgs - i)
+            toFile = GetOrigName(i + 1)
             logging.info("Move %s to %s", fromFile, toFile)
             shutil.move(fromFile, toFile)
 
@@ -1333,11 +1326,10 @@ class AnimatedGif:
             return False
 
         # Check for blank frames
-        for x in range(0, len(importedImgList)):
-            i = importedImgList[x]
-            if i.startswith("<") and i.endswith(">"):
-                self.CreateBlankFrame(i.strip("<>"))
-                importedImgList[x] = self.blankImgFile
+        for i, img in enumerate(importedImgList):
+            if img.startswith("<") and img.endswith(">"):
+                self.CreateBlankFrame(img.strip("<>"))
+                importedImgList[i] = self.blankImgFile
 
         if insertAfter:
             start += 1
@@ -1346,18 +1338,18 @@ class AnimatedGif:
         currentImgList = self.GetExtractedImageList()
 
         # Temporarily rename existing images
-        for x in range(0, len(currentImgList)):
+        for i, img in enumerate(currentImgList):
             toFile = "%scurrent_image%04d.png" % (
-                self.GetExtractedImagesDir(), x + 1)
+                self.GetExtractedImagesDir(), i + 1)
             logging.info("Temporarily rename image %s to %s",
-                         currentImgList[x], toFile)
+                         img, toFile)
 
-            if currentImgList[x] in importedImgList:
-                shutil.copy(currentImgList[x], toFile)
+            if img in importedImgList:
+                shutil.copy(img, toFile)
             else:
-                shutil.move(currentImgList[x], toFile)
+                shutil.move(img, toFile)
 
-            currentImgList[x] = toFile
+            currentImgList[i] = toFile
 
         # Temporarily rename and resize imported images
         logging.info("Rename, resize and rotate imported image sequence")
@@ -7639,9 +7631,9 @@ class ToolTip(object):
             return False
 
         if len(bboxVals) == 4:
-            x, y, cx, cy = bboxVals
+            x, y, _cx, cy = bboxVals
         else:
-            x, y, cx, cy = [int(n) for n in bboxVals.split()]
+            x, y, _cx, cy = [int(n) for n in bboxVals.split()]
 
         # Set the X and Y offset
         x = x + self.widget.winfo_rootx() + 15
@@ -7775,7 +7767,7 @@ class InstaCommandLine:
         return 0
 
     # Progress callback
-    def OnShowProgress(self, doneFlag, ignore=None):
+    def OnShowProgress(self, doneFlag):
         if doneFlag:
             print(" [OK]")
         else:

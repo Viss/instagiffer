@@ -64,7 +64,6 @@ import distutils.spawn
 from random import randrange
 from os.path import expanduser
 from configparser import ConfigParser, RawConfigParser
-from queue import Queue
 from math import gcd
 
 # TK
@@ -81,7 +80,6 @@ from PIL import Image, ImageTk, ImageFilter, ImageDraw
 try:
     # Windows uses the PIL ImageGrab module for screen capture
     from PIL import ImageGrab
-    import winsound
     import win32api
     from win32event import CreateMutex
     from winerror import ERROR_ALREADY_EXISTS
@@ -90,6 +88,13 @@ except ImportError:
 
 
 import gifferlib
+from gifferlib import is_pc, is_mac, IsUrl, IsPictureFile, CleanupPath
+from gifferlib import RunProcess, DefaultOutputHandler, NotifyUser
+from gifferlib import MillisecToDurationStr, DurationStrToMillisec
+from gifferlib import ReScale, AudioPlay, CreateWorkingDir, GetFileExtension
+from gifferlib import GetFailSafeDir, MillisecToDurationComponents
+from gifferlib import GetLogPath, OpenFileWithDefaultApp, GetIntermediaryFrameFormat
+
 
 # # debugging
 # fmt = '[%(asctime)s] p%(process)s {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s'
@@ -113,434 +118,9 @@ __changelogUrl__ = "http://instagiffer.com/post/146636589471/instagiffer-175-mac
 __faqUrl__ = "http://www.instagiffer.com/post/51787746324/frequently-asked-questions"
 
 
-def is_mac():
-    """Return true if running on a MAC"""
-    return sys.platform == 'darwin'
-
-
-def is_pc():
-    """Return true if running on windows"""
-    return sys.platform == 'win32'
-
-
-def OpenFileWithDefaultApp(fileName):
-    """Open a file in the application associated with this file extension"""
-    if sys.platform == 'darwin':
-        os.system('open ' + fileName)
-    else:
-        try:
-            os.startfile(fileName)  # pylint: disable=no-member
-        except Exception:
-            msg = "Unable to open! "
-            msg += f"I wasn't allowed to open '{fileName}'. "
-            msg += "You will need to perform this task manually."
-            tkinter.messagebox.showinfo(msg)
-
-
-def GetFileExtension(filename):
-    _, fext = os.path.splitext(filename)
-
-    if fext is None:
-        return ""
-
-    fext = str(fext).lower()
-    fext = fext.strip('.')
-    return fext
-
-
-def AudioPlay(wavPath):
-    if is_mac():
-        if wavPath is not None:
-            subprocess.call(["afplay", wavPath])  # blocks
-    elif is_pc():
-        if wavPath is None:
-            winsound.PlaySound(None, 0)
-        else:
-            winsound.PlaySound(
-                wavPath, winsound.SND_FILENAME | winsound.SND_ASYNC)
-    else:  # linux @leanrum (works on my machine) TODO change this shit
-        if wavPath is not None:
-            subprocess.call(["aplay", wavPath])  # blocks
-
-    return True
-
-
-def IsPictureFile(fileName):
-    return GetFileExtension(fileName) in ['jpeg', 'jpg', 'png', 'bmp', 'tif']
-
-
-def IsUrl(s):
-    urlPatterns = re.compile(r'^(www\.|https://|http://)', re.I)
-    return urlPatterns.match(s)
-
-
-def GetLogPath():
-    return os.path.dirname(os.path.realpath(sys.argv[0])) + os.sep + 'instagiffer-event.log'
-
-#
-# Mostly for Windows. Converts path into short form to bypass unicode headaches
-#
-
-
-def CleanupPath(path):
-    #
-    # Deal with Unicode video paths. On Windows, simply DON'T
-    # deal with it. Use short names and paths instead :S
-    #
-
-    if is_pc():
-
-        try:
-            path.decode('ascii')
-        except:
-            path = win32api.GetShortPathName(path)
-
-    return path
-
-
-#
-# Re-scale a value
-#
-
-def ReScale(val, oldScale, newScale):
-    OldMax = oldScale[1]
-    OldMin = oldScale[0]
-    NewMax = newScale[1]
-    NewMin = newScale[0]
-    OldValue = val
-    OldRange = (OldMax - OldMin)
-    NewRange = (NewMax - NewMin)
-    NewValue = (((OldValue - OldMin) * NewRange) / OldRange) + NewMin
-    return NewValue
-
-
-#
-# norecurse decorator
-#
-def norecurse(func):
-    func.called = False
-
-    def f(*args, **kwargs):
-        if func.called:
-            print("Recursion!")
-            return False
-        func.called = True
-        result = func(*args, **kwargs)
-        func.called = False
-        return result
-    return f
-
-#
-# Convert a time or duration (hh:mm:ss.ms) string into a value in milliseconds
-#
-
-
-def DurationStrToMillisec(string, throwParseError=False):
-    try:
-        return float(string) * 1000
-    except ValueError:
-        pass
-    if string is not None:
-        r = re.compile(r'[^\d]+')
-        tokens = r.split(string)
-        vidLen = ((int(tokens[0]) * 3600) + (int(tokens[1])
-                                             * 60) + (int(tokens[2]))) * 1000 + int(tokens[3])
-        return vidLen
-    if throwParseError:
-        raise ValueError("Invalid duration format")
-
-    return 0
-
-
-def DurationStrToSec(durationStr):
-    ms = DurationStrToMillisec(durationStr)
-
-    if ms == 0:
-        return 0
-    # return int((ms + 500) / 1000) # Rouding
-    return int(ms/1000)  # Floor
-
-
-def MillisecToDurationComponents(msTotal):
-    secTotal = msTotal / 1000
-    h = int(secTotal / 3600)
-    m = int((secTotal % 3600) / 60)
-    s = int(secTotal % 60)
-    ms = int(msTotal % 1000)
-
-    return [h, m, s, ms]
-
-
-def MillisecToDurationStr(msTotal):
-    dur = MillisecToDurationComponents(msTotal)
-    return "%02d:%02d:%02d.%03d" % (dur[0], dur[1], dur[2], dur[3])
-
-
-def CountFilesInDir(dirname, filenamePattern=None):
-    if filenamePattern is None:
-        return len([name for name in os.listdir(dirname) if os.path.isfile(os.path.join(dirname, name))])
-    fileglobber = dirname + filenamePattern + '*'
-    return len(glob.glob(fileglobber))
-
-#
-# Run non-blocking
-#
-
-#
-# Converts process output to status bar messages - there is some cross-cutting here
-#
-
-
-def DefaultOutputHandler(stdoutLines, stderrLines, cmd):
-    s = None
-    i = False
-
-    for outData in [stdoutLines, stderrLines, cmd]:
-        if not outData:
-            continue
-
-        if isinstance(outData, list):
-            outData = " ".join(outData).encode('ascii')
-
-        # youtube dl
-
-        youtubeDlSearch = re.search(
-            rb'\[download\]\s+([0-9\.]+)% of', outData, re.MULTILINE)
-        if youtubeDlSearch:
-            i = int(float(youtubeDlSearch.group(1)))
-            s = "Downloaded %d%%..." % (i)
-
-        # ffmpeg frame extraction progress
-        ffmpegSearch = re.search(
-            rb'frame=.+time=(\d+:\d+:\d+\.\d+)', outData, re.MULTILINE)
-        if ffmpegSearch:
-            secs = DurationStrToMillisec(ffmpegSearch.group(1))
-            s = "Extracted %.1f seconds..." % (secs/1000.0)
-
-        # imagemagick - figure out what we're doing based on comments
-        imSearch = re.search(
-            rb'^".+(convert\.exe|convert)".+-comment"? "([^"]+):(\d+)"', outData)
-        if imSearch:
-            n = int(imSearch.group(3))
-
-            if n == -1:
-                s = "%s" % (imSearch.group(2))
-            else:
-                i = n
-                s = "%d%% %s" % (i, imSearch.group(2))
-
-    return s, i
-
-
-ON_POSIX = 'posix' in sys.builtin_module_names
-
-
-#
-# Prompt User
-#
-def NotifyUser(title, msg):
-    return tkinter.messagebox.showinfo(title, msg)
-
-#
-# Run a process
-#
-
-
-def RunProcess(cmd, callback=None, returnOutput=False, callBackFinalize=True, outputTranslator=DefaultOutputHandler):
-    if not __release__:
-        logging.info("Running Command: %s", cmd)
-
-    env = os.environ.copy()
-
-    if is_pc():
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-    else:
-        startupinfo = None
-        if isinstance(cmd, str):
-            cmd = shlex.split(cmd)
-
-    pipe = subprocess.Popen(
-        cmd, startupinfo=startupinfo, shell=False,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=env, bufsize=1, close_fds=ON_POSIX)
-    qOut = Queue()
-    qErr = Queue()
-    for line in pipe.stdout.readlines():
-        qOut.put(line)
-    for line in pipe.stderr.readlines():
-        qErr.put(line)
-
-    callbackReturnedFalse = False
-
-    stdout = ""
-    stderr = ""
-
-    percent = None
-    while True:
-        statusStr = None
-        stderrLines = None
-        stdoutLines = None
-
-        try:
-            while True:  # Exhaust the queue
-                stdoutLines = qOut.get_nowait()
-                stdout += stdoutLines
-        except:
-            pass
-
-        try:
-            while True:
-                stderrLines = qErr.get_nowait()
-                stderr += stderrLines
-        except:
-            pass
-
-        if outputTranslator is not None:
-            # try:
-            statusStr, percentDoneInt = outputTranslator(
-                stdoutLines, stderrLines, cmd)
-
-            if isinstance(percentDoneInt, int):
-                percent = percentDoneInt
-            elif percent is not None:
-                percentDoneInt = percent
-
-            # except:
-            #    pass
-
-        # Caller wants to abort!
-        if callback is not None and callback(percentDoneInt, statusStr) is False:
-            try:
-                pipe.terminate()
-                pipe.kill()
-            except:
-                logging.error(
-                    "RunProcess: kill() or terminate() caused an exception")
-
-            callbackReturnedFalse = True
-            break
-
-        # Check if done
-        if pipe.poll() is not None:
-            break
-
-        # Polling frequency. Lengthening this will decrease responsiveness
-        time.sleep(0.1)
-
-    # Notify callback of exit. Check callballFinalize so we don't prematurely reset the progress bar
-    if callback is not None and callBackFinalize is True:
-        callback(True)
-
-    # Callback aborted command
-    if callbackReturnedFalse:
-        logging.error("RunProcess was aborted by caller")
-        # return False
-
-    # result
-    try:
-        remainingStdout = ""
-        remainingStderr = ""
-        remainingStdout, remainingStderr = pipe.communicate()
-    except IOError as e:
-        logging.error("Encountered error communicating with sub-process %s", e)
-
-    success = (pipe.returncode == 0)
-    if isinstance(remainingStdout, bytes):
-        remainingStdout = remainingStdout.decode('ascii')
-    stdout += remainingStdout
-    if isinstance(remainingStderr, bytes):
-        remainingStderr = remainingStderr.decode('ascii')
-    stderr += remainingStderr
-
-    # Logging
-    if not __release__:
-        logging.info("return: %s", success)
-        logging.info("stdout: %s", stdout)
-        logging.error("stderr: %s", stderr)
-
-    if returnOutput:
-        return stdout, stderr  # , success
-    return success
-
-
-#
-# Create working directory
-#
-
-def CreateWorkingDir(conf):
-    tempDir = None
-
-    # See if they specified a custom dir
-    if conf.ParamExists('paths', 'workingDir'):
-        tempDir = conf.GetParam('paths', 'workingDir')
-
-    appDataRoot = ''
-
-    # No temp dir configured
-    if not tempDir:
-        if is_mac():
-            appDataRoot = expanduser("~") + '/Library/Application Support/'
-            tempDir = appDataRoot + 'Instagiffer/'
-        else:
-            appDataRoot = expanduser("~") + os.sep
-            tempDir = appDataRoot + '.instagiffer' + os.sep + 'working'
-
-    # Pre-emptive detection and correction of language issues
-    try:
-        tempDir.encode(locale.getpreferredencoding())
-    except UnicodeError:
-        logging.info(
-            "Users home directory is problematic due to non-latin characters: %s",
-            tempDir)
-        tempDir = GetFailSafeDir(conf, tempDir)
-
-    # Try to create temp directory
-    if not os.path.exists(tempDir):
-        os.makedirs(tempDir)
-        if not os.path.exists(tempDir):
-            logging.error("Failed to create working directory: %s", tempDir)
-            return ""
-
-    logging.info("Working directory created: %s", tempDir)
-    return tempDir
-
-
-#
-# For language auto-fix
-#
-def GetFailSafeDir(conf, badPath):
-    path = badPath
-
-    if is_pc():
-        goodPath = conf.GetParam('paths', 'failSafeDir')
-        if not os.path.exists(goodPath):
-            if tkinter.messagebox.askyesno("Automatically Fix Language Issue?", "It looks like you are using a non-latin locale. Can Instagiffer create directory " + goodPath + " to solve this issue?"):
-                err = False
-                try:
-                    os.makedirs(goodPath)
-                except:
-                    err = True
-
-                if os.path.exists(goodPath):
-                    path = goodPath
-                else:
-                    err = True
-
-                if err:
-                    tkinter.messagebox.showinfo("Error Fixing Language Issue", "Failed to create '" + goodPath +
-                                                "'. Please make this directory manually in Windows Explorer, then restart Instagiffer.")
-        else:
-            path = goodPath
-
-    return path
-
 #
 # Configuration Class
 #
-
-
 class InstaConfig:
 
     description = "Configuration Class"
@@ -3959,13 +3539,13 @@ class GifApp:
             self.frameTimingOrCompressionChanges += self.conf.SetParam(
                 'size', 'fileOptimizer', bool(int(self.fileSizeOptimize.get()) == 1))
 
-    def OnCancel(self, event):
+    def OnCancel(self, _event):
         if self.guiBusy:
             if tkinter.messagebox.askyesno("Cancel Request", "Are you sure you want to cancel the current operation?"):
                 logging.info("Cancel Event")
                 self.cancelRequest = True
 
-    def OnFpsChanged(self, event):
+    def OnFpsChanged(self, _event):
         self.RestartTimer()
 
     def OnDurationMouseWheel(self, event):
@@ -4016,7 +3596,7 @@ class GifApp:
         self.spnStartTimeMilli.delete(0, "end")
         self.spnStartTimeMilli.insert(0, "0")
 
-    def OnStartSliderUpdated(self, unknown):
+    def OnStartSliderUpdated(self, _unknown):
         # if self.gif is not None:
         #     if self.gif.GetThumbAge() > 0.9:
         #         self.gif.GetVideoThumb(self.GetStartTimeString(), self.canvasSize)
@@ -4027,7 +3607,7 @@ class GifApp:
         self.OnStartChanged()
         return True
 
-    def OnStartChanged(self, widget_name='', prior_value=''):
+    def OnStartChanged(self, _widget_name='', _prior_value=''):
         trackbarPosSec = DurationStrToSec("%02d:%02d:%02d:%03d" % (int(self.spnStartTimeHour.get()), int(
             self.spnStartTimeMin.get()), int(self.spnStartTimeSec.get()), 100*int(self.spnStartTimeMilli.get())))
 
@@ -4118,10 +3698,11 @@ class GifApp:
 
         self.canCropTool.bind("<Double-Button-1>", self.OnDoubleClickDelete)
         self.OnCropUpdate()
+        return True
 
-    # This function needs to be re-entrant!!
 
     def UpdateThumbnailPreview(self):
+        """This function needs to be re-entrant"""
         if self.gif is None:
             return
 
@@ -4416,7 +3997,7 @@ class GifApp:
                                 cx + (cx2 - cx)/2 + self.cropSizerSize/2,
                                 cy + (cy2 - cy)/2 + self.cropSizerSize/2)
 
-    def OnCropUpdate(self, unused=None):
+    def OnCropUpdate(self, _unused=None):
         try:
             sx, sy, sw, sh, smaxw, smaxh, sratio = self.GetCropSettingsFromCanvas(
                 True)
@@ -4517,7 +4098,7 @@ class GifApp:
 
     def OnShowProgress(self, doneFlag, statusBarOutput=None):
 
-        if type(doneFlag) == bool and doneFlag:
+        if isinstance(doneFlag, bool) and doneFlag:
             self.progressBarPosition.set(0)
             self.guiBusy = False
         else:
@@ -4525,7 +4106,7 @@ class GifApp:
                 self.SetStatus(statusBarOutput.replace(
                     '\n', '').replace('\r', ''))
 
-            if type(doneFlag) == int:
+            if isinstance(doneFlag, int):
                 self.progressBarPosition.set(doneFlag)
             else:
                 self.progressBar.step(1)  # indefinite
@@ -4539,8 +4120,7 @@ class GifApp:
             self.progressBarPosition.set(0)
             self.cancelRequest = False
             return False
-        else:
-            return True
+        return True
 
     def OnWindowClose(self):
         # Cancel any actions in progress
@@ -4578,19 +4158,21 @@ class GifApp:
             openExplorerCmd = 'xdg-open '
 
         openExplorerCmd += '"' + self.gif.GetExtractedImagesDir() + '"'
-        logging.info("Open in explorer command: " + openExplorerCmd)
+        logging.info("Open in explorer command: %s", openExplorerCmd)
 
         if not is_pc():
             openExplorerCmd = shlex.split(openExplorerCmd)
 
         subprocess.Popen(openExplorerCmd)
 
-    def Alert(self, title, message):
-        logging.info("Alert: title: [%s], message: [%s]" %
-                     (title, message.strip()))
+    @staticmethod
+    def Alert(title, message):
+        logging.info("Alert: title: [%s], message: [%s]",
+                     title, message.strip())
         tkinter.messagebox.showinfo(title, message)
 
-    def OnRClickPopup(self, event):
+    @staticmethod
+    def OnRClickPopup(event):
         def RClickPaste(event):
             if is_mac():
                 pasteAction = '<<Paste>>'
@@ -4610,12 +4192,13 @@ class GifApp:
             label='Clear', command=lambda event=event: RClickClear(event))
         popUp.tk_popup(event.x_root+40, event.y_root+10, entry="0")
 
-    def About(self, event=None):
+    def About(self, _event=None):
         global __version__
         self.Alert("About Instagiffer",
                    "You are running Instagiffer " + __version__ + "!\nFollow us on Tumblr for updates, tips and tricks: www.instagiffer.com")
 
-    def ViewLog(self):
+    @staticmethod
+    def ViewLog():
         numLines = sum(1 for line in open(GetLogPath()))
 
         if numLines <= 7:
@@ -4624,10 +4207,12 @@ class GifApp:
 
         OpenFileWithDefaultApp(GetLogPath())
 
-    def OpenFAQ(self):
+    @staticmethod
+    def OpenFAQ():
         OpenFileWithDefaultApp(__faqUrl__)
 
-    def CheckForUpdates(self):
+    @staticmethod
+    def CheckForUpdates():
         OpenFileWithDefaultApp(__changelogUrl__)
 
     def ResetInputs(self):
@@ -4782,7 +4367,7 @@ class GifApp:
         duration = float(self.gif.GetConfig().GetParam(
             'length',  'durationSec'))
 
-        if duration == 0.0 or (videoLen > 0.0 and videoLen < duration):
+        if duration == 0.0 or (0.0 < videoLen < duration):
             duration = videoLen
 
         self.duration.set(duration)
@@ -4843,7 +4428,7 @@ class GifApp:
         w, h = img.size
 
         if w <= 0 or h <= 0:
-            return
+            return None
 
         scaleFactor = canvasSz/float(max(w, h))
         img = img.resize(
@@ -4865,6 +4450,7 @@ class GifApp:
             0, 0, canvasSz, canvasSz, outline="black", fill="black", width=1, tag='previewBG')
         self.canCropTool.create_image(
             x, y, image=self.thumbnailPreview, tag="preview", anchor=NW)
+        return True
 
     def OnShowPreview(self, event):
         if self.gif is None:
@@ -4886,13 +4472,14 @@ class GifApp:
 
         return True
 
-    def OnStopPreview(self, event):
+    def OnStopPreview(self, _event):
 
         if self.gif is None or self.showPreviewFlag is False:
             return False
 
         self.UpdateThumbnailPreview()
         self.showPreviewFlag = False
+        return True
 
     def OnCreateGif(self):
         self.ProcessImage(3)
@@ -5159,7 +4746,7 @@ class GifApp:
             if not self.gif.GifExists():
                 self.Alert("GIF not found!", "I Can't find the GIF %s" %
                            (self.gif.GetLastGifOutputPath()))
-            elif len(self.gif.GetProcessedImageList()) == 0:
+            elif not self.gif.GetProcessedImageList():
                 self.Alert("Frames Not Found", "Processed %s frames not found" % (
                     self.GetIntermediaryFrameFormat()))
             else:
@@ -5186,7 +4773,7 @@ class GifApp:
         if videoPath is None:
             return ""
 
-        if type(videoPath) is list:
+        if isinstance(videoPath, list):
             fileList = list()
             for f in videoPath:
                 if len(f) > 0:
@@ -5199,7 +4786,7 @@ class GifApp:
         otherCount = 0
         for f in fileList:
             f = f.replace('/', os.sep)
-            logging.info('Filename: "' + f + '"')
+            logging.info('Filename: "%s"', f)
             if IsPictureFile(f):
                 imgCount += 1
             else:
@@ -5207,8 +4794,8 @@ class GifApp:
 
         totalCount = imgCount + otherCount
 
-        logging.info("Total file count %d (Images: %d; Other: %d)" %
-                     (totalCount, imgCount, otherCount))
+        logging.info("Total file count %d (Images: %d; Other: %d)",
+                     totalCount, imgCount, otherCount)
 
         if totalCount == 0:
             return ""
@@ -5224,10 +4811,10 @@ class GifApp:
 
         return returnStr
 
-    def OnShiftLoadVideo(self, event):
+    def OnShiftLoadVideo(self, _event):
         self.OnLoadVideo(False, True)
 
-    def OnLoadVideoEnterPressed(self, event):
+    def OnLoadVideoEnterPressed(self, _event):
         self.OnLoadVideo(True)
 
     def OnLoadVideo(self, enterPressed=False, multiSelect=False):
@@ -5236,7 +4823,7 @@ class GifApp:
         errStr = "Unknown error"
         urlPatterns = re.compile(r'^(www\.|https://|http://)')
         capPattern = re.compile(
-            '^::capture ([\.0-9]+) ([\.0-9]+) ([0-9]+)x([0-9]+)\+(\-?[0-9]+)\+(\-?[0-9]+) cursor=(\d) retina=(\d) web=(\d)$')
+            r'^::capture ([\.0-9]+) ([\.0-9]+) ([0-9]+)x([0-9]+)\+(\-?[0-9]+)\+(\-?[0-9]+) cursor=(\d) retina=(\d) web=(\d)$')
         fileName = self.txtFname.get().strip()
 
         # Check same URL?
@@ -5250,12 +4837,12 @@ class GifApp:
 
         if urlPatterns.match(fileName):
             self.SetStatus("Downloading video information. Please wait...")
-            logging.info("Download " + fileName)
+            logging.info("Download %s", fileName)
         elif capPattern.match(fileName):
             self.SetStatus("Capturing screen...")
         elif enterPressed:
             self.SetStatus("Loading manually-specified path...")
-            logging.info("User entered " + fileName)
+            logging.info("User entered %s", fileName)
 
             fileName = self.ParseVideoPathInput(fileName)
 
@@ -5271,15 +4858,14 @@ class GifApp:
                 fileNames = askopenfilename(multiple=multiSelectMode)
 
             try:
-                logging.info("Open returned: " + str(fileNames) +
-                             " (%s)" % (type(fileNames)))
+                logging.info("Open returned: %s (%s)", fileNames, type(fileNames))
             except:
                 logging.info("Failed to decode value returned by Open dialog")
 
             if fileNames is None:
                 return False
 
-            if type(fileNames) is not tuple:
+            if not isinstance(fileNames, tuple):
                 fileList = [fileNames]
             else:
                 fileList = list(fileNames)
@@ -5287,7 +4873,7 @@ class GifApp:
             fileName = self.ParseVideoPathInput(fileList)
 
             # Populate text field with user's choice
-            if len(fileName):
+            if fileName:
                 self.SetStatus("Loading video, please wait...")
                 self.txtFname.delete(0, END)
                 self.txtFname.insert(0, fileName)
@@ -5305,7 +4891,7 @@ class GifApp:
         self.EnableInputs(False, False)
 
         # Attempt to open the video for processing
-        if len(fileName):
+        if fileName:
             try:
                 self.gif = AnimatedGif(
                     self.conf, fileName, self.tempDir, self.OnShowProgress, self.parent)
@@ -5386,7 +4972,8 @@ class GifApp:
         self.guiBusy = True
         return popupWindow
 
-    def ReModalDialog(self, dlg):
+    @staticmethod
+    def ReModalDialog(dlg):
         dlg.update()
         dlg.deiconify()
         dlg.lift()
@@ -5412,7 +4999,7 @@ class GifApp:
             geom = dlg.geometry()
 
         # Restore geometry
-        if dlgGeometry is not None and len(dlgGeometry) and dlgGeometry != "center":
+        if dlgGeometry is not None and dlgGeometry and dlgGeometry != "center":
             geom = dlgGeometry
 
         # Set window geometry
@@ -5482,18 +5069,9 @@ class GifApp:
 
         return self.WaitForChildDialog(popupWindow)
 
-    def OnCaptionSelect(self, *args):
+    def OnCaptionSelect(self, *_args):
         if not self.guiBusy:
             self.OnCaptionConfig()
-
-    def GetFamilyList(self):
-        return list(self.fonts.keys())
-
-    def GetFontAttributeList(self, fontFamily):
-        return list(self.fonts[fontFamily].keys())
-
-    def GetFontId(self, fontFamily, fontStyle):
-        return self.fonts[fontFamily][fontStyle]
 
     def OnScreenCapture(self):
         resizable = True
@@ -5647,16 +5225,15 @@ class GifApp:
 
             self.txtFname.delete(0, END)
             self.txtFname.insert(0, "::capture %s %s %dx%d+%d+%d cursor=%d retina=%d web=%d" % (
-                                    self.screenCapDurationSec.get(),
-                                    fps,
-                                    w,
-                                    h,
-                                    x,
-                                    y,
-                                    self.screenCapShowCursor.get(),
-                                    self.screenCapRetina.get(),
-                                    self.screenCapLowerFps.get()
-            ))
+                self.screenCapDurationSec.get(),
+                fps,
+                w,
+                h,
+                x,
+                y,
+                self.screenCapShowCursor.get(),
+                self.screenCapRetina.get(),
+                self.screenCapLowerFps.get()))
 
             OnCloseScreenCapDlg()
 
@@ -6195,8 +5772,10 @@ class GifApp:
             if blankFrame.get():
                 imgList = ["<black>"] * numBlanks.get()
             else:
-                filesStr = askopenfilename(parent=dlg, title="Choose images to import", multiple=True, filetypes=[
-                                           ('Image Files', ("*.jpg", "*.gif", "*.bmp", "*.png"))])
+                filesStr = askopenfilename(
+                    parent=dlg, title="Choose images to import",
+                    multiple=True,
+                    filetypes=[('Image Files', ("*.jpg", "*.gif", "*.bmp", "*.png"))])
                 imgList = list(self.parent.tk.splitlist(filesStr))
 
             self.SetStatus("Import %d images" % (len(imgList)))
@@ -6322,7 +5901,7 @@ class GifApp:
             dlg.destroy()
             return True
 
-        def OnCropChange(*args):
+        def OnCropChange(*_args):
             try:
                 sx, sy, sw, sh, smaxw, smaxh, sratio = self.GetCropSettingsFromCanvas(
                     True, False)
@@ -6406,9 +5985,9 @@ class GifApp:
             self.SetStatus("Reversed frames")
             self.UpdateThumbnailPreview()  # We have new frames
             return True
-        else:
-            self.Alert("Unable to reverse frames",
-                       "Something weird happened. I couldn't reverse this thing :(")
+        self.Alert("Unable to reverse frames",
+                   "Something weird happened. I couldn't reverse this thing :(")
+        return False
 
     def OnCrossFade(self):
         if self.gif is None or self.gif.GetNumFrames() <= 2:
@@ -6620,9 +6199,8 @@ class GifApp:
                 audioChanged = False
                 btnPreview.configure(state="normal")
                 return True
-            else:
-                self.Alert("Audio", "Can't find the audio file")
-                return False
+            self.Alert("Audio", "Can't find the audio file")
+            return False
 
         def OnPlay():
             if audioChanged:
@@ -6633,6 +6211,7 @@ class GifApp:
 
             AudioPlay(self.gif.GetAudioClipPath())
             self.parent.update_idletasks()
+            return True
 
         def OnOkClicked():
             closeDialog = False
@@ -6703,10 +6282,11 @@ class GifApp:
         lblBrushSize = Label(dlg, text="Brush Size")
         spnBrushSize = Spinbox(dlg, font=self.defaultFont, from_=1, to=100, increment=1, width=5,
                                textvariable=brushSize, repeatdelay=300, repeatinterval=30, state='readonly')
-        img = PIL.Image.open(self.gif.GetExtractedImageList()[
-                             self.GetThumbNailIndex()-1])
+        img = PIL.Image.open(
+            self.gif.GetExtractedImageList()[self.GetThumbNailIndex() - 1])
         img = img.resize((int(self.gif.GetVideoWidth() * scaleFactor),
-                          int(self.gif.GetVideoHeight() * scaleFactor)), PIL.Image.ANTIALIAS)
+                          int(self.gif.GetVideoHeight() * scaleFactor)),
+                         PIL.Image.ANTIALIAS)
 
         photoImg = PIL.ImageTk.PhotoImage(img)
 
@@ -6840,16 +6420,18 @@ class GifApp:
     def OnEffectsChange(self, *args):
 
         # Add new fx to this list
-        allFx = [self.isGrayScale, self.isSharpened, self.isDesaturated, self.isSepia, self.isColorTint, self.isFadedEdges,
-                 self.desaturatedAmount, self.sepiaAmount, self.sharpenedAmount, self.fadedEdgeAmount, self.colorTintAmount,
-                 self.colorTintColor, self.isBordered, self.borderAmount, self.borderColor, self.nashvilleAmount, self.isNashville,
-                 self.isBlurred, self.blurredAmount, self.isCinemagraph, self.invertCinemagraph, self.isAudioEnabled]
+        allFx = [self.isGrayScale, self.isSharpened, self.isDesaturated,
+                 self.isSepia, self.isColorTint, self.isFadedEdges,
+                 self.desaturatedAmount, self.sepiaAmount, self.sharpenedAmount,
+                 self.fadedEdgeAmount, self.colorTintAmount, self.colorTintColor,
+                 self.isBordered, self.borderAmount, self.borderColor,
+                 self.nashvilleAmount, self.isNashville, self.isBlurred,
+                 self.blurredAmount, self.isCinemagraph, self.invertCinemagraph,
+                 self.isAudioEnabled]
 
         newFxHash = ""
         for param in allFx:
             newFxHash += str(param.get())
-            # if args[0] == str(param):
-            #     logging.info("Effect Change. New value: " + str(param.get()) )
 
         if not self.guiBusy and (newFxHash != self.fxHash or self.maskEdited):
             self.fxHash = newFxHash
@@ -6861,8 +6443,7 @@ class GifApp:
     def HaveMask(self):
         if self.maskEventList is None or len(self.maskEventList) == 0:
             return False
-        else:
-            return True
+        return True
 
     def HaveAudioPath(self):
         audiofile = self.conf.GetParam('audio', 'path')
@@ -7359,7 +6940,7 @@ class GifApp:
         for item, tipString in tooltips.items():
             createToolTip(item, tipString)
 
-        def OnFontUpdate(*args):
+        def OnFontUpdate(*_args):
             # Did the font change?
             fontChanged = False
             if cbxFontFamily.current() != self.OnCaptionConfigDefaults["defaultFontIdx"]:
@@ -7436,7 +7017,7 @@ class GifApp:
 
             listValues = list(self.cbxCaptionList["values"])
 
-            if len(caption) <= 0:
+            if not caption:
                 self.captionChanges += self.conf.SetParam(
                     confName, "text",              "")
                 self.captionChanges += self.conf.SetParam(
@@ -7515,6 +7096,7 @@ class GifApp:
             self.cbxCaptionList.current(captionIdx)
 
             captionDlg.destroy()
+            return True
 
         #
         # Attach handlers
@@ -7572,7 +7154,7 @@ class GifApp:
 #
 
 
-class ToolTip(object):
+class ToolTip:
 
     def __init__(self, widget):
         self.widget = widget
@@ -7589,12 +7171,12 @@ class ToolTip(object):
 
         self.text = text
         if self.tipwindow or not self.text:
-            return
+            return None
 
         bboxVals = self.widget.bbox("insert")
 
         if bboxVals is None:
-            logging.error("Failed to display tooltip: " + text)
+            logging.error("Failed to display tooltip: %s", text)
             return False
 
         if len(bboxVals) == 4:
@@ -7624,6 +7206,7 @@ class ToolTip(object):
                       background="#ffffe0", relief=SOLID, borderwidth=1,
                       font=("tahoma", "8", "normal"))
         label.pack(ipadx=1)
+        return True
 
     def makevisable(self):
         self.tipwindow.deiconify()
@@ -7655,7 +7238,7 @@ def createToolTip(widget, text):
 lastErrorTimestamp = 0
 
 
-def tkErrorCatcher(self, *args):
+def tkErrorCatcher(*args):
     global lastErrorTimestamp
     # Rate-limit the pop-up. If there's a constantly repeating bug, the never-ending popup becomes very annoying.
     if time.time() - lastErrorTimestamp > 10:
@@ -7664,7 +7247,7 @@ def tkErrorCatcher(self, *args):
     else:
         showGuiMessage = False
 
-    err = traceback.format_exception(*args)
+    err = traceback.format_exception(*args)  # pylint: disable=no-value-for-parameter
 
     logging.error("Error trace:")
 
@@ -7708,15 +7291,16 @@ class InstaCommandLine:
 
         self.videoFileName = sys.argv[1]  # self.args.video
 
-    def ArgsArePresent(self):
+    @staticmethod
+    def ArgsArePresent():
         return len(sys.argv) > 1
 
     def GetVideoPath(self):
         if self.videoFileName is not None:
-            logging.info("File specified on command line: " +
+            logging.info("File specified on command line: %s",
                          self.videoFileName)
-            logging.info("File exists: %d" %
-                         (os.path.exists(self.videoFileName)))
+            logging.info("File exists: %s",
+                         os.path.exists(self.videoFileName))
             return self.videoFileName
         return None
 
@@ -7734,7 +7318,8 @@ class InstaCommandLine:
         return 0
 
     # Progress callback
-    def OnShowProgress(self, doneFlag):
+    @staticmethod
+    def OnShowProgress(doneFlag):
         if doneFlag:
             print(" [OK]")
         else:

@@ -10,6 +10,7 @@ class FFProbeError(GifferError):
     """FFProbe Error"""
 
 def ffprobe(ffprobe_bin, filename, fields):
+    """Retrieves video information from a file with ffprobe"""
     if isinstance(fields, str):
         fields = [fields]
 
@@ -18,7 +19,7 @@ def ffprobe(ffprobe_bin, filename, fields):
     cmd.extend('-v error -select_streams v:0'.split())
     cmd.extend(f'-show_entries stream={fstring} -of csv=p=0'.split())
     cmd.append(filename)
-    cmd = shlex.join(cmd)
+    cmd = ' '.join(shlex.quote(s) for s in cmd)
     output = subprocess.getoutput(cmd).strip().split(',')
     if len(output) != len(fields):
         raise FFProbeError("Output doesn't match fields")

@@ -227,20 +227,22 @@ def norecurse(func):
 #
 
 def DurationStrToMillisec(str, throwParseError=False):
+    logging.info('DurationStrToMillisec: input=%s', str)
     try:
         return float(str) * 1000
     except ValueError:
         pass
     if str is not None:
-        r      = re.compile('[^\d]+')
+        r = re.compile('[^\d]+')
         tokens = r.split(str)
-        vidLen = ((int(tokens[0]) * 3600) + (int(tokens[1]) * 60) + (int(tokens[2]))) * 1000 + int(tokens[3])
+        if len(tokens) == 4:
+            vidLen = (int(tokens[0]) * 3600 +
+                      int(tokens[1]) * 60 +
+                      int(tokens[2]) * 1000 +
+                      int(tokens[3]))
+        else:
+            vidLen = 0
         return vidLen
-    else:
-        if throwParseError:
-            raise ValueError("Invalid duration format")
-
-        return 0
 
 
 def DurationStrToSec(durationStr):
@@ -1592,7 +1594,7 @@ class AnimatedGif:
     def GetResizedImagesLastModifiedTs(self):
         if self.ResizedImagesExist():
             largestTimestamp = os.stat(self.GetResizedImagesDir()).st_mtime
-            files            = glob.glob(self.GetResizedImagesDir() + '*')
+            files            = sorted(glob.glob(self.GetResizedImagesDir() + '*'))
 
             for f in files:
                 if os.stat(f).st_mtime > largestTimestamp:
@@ -1603,7 +1605,7 @@ class AnimatedGif:
 
     def GetResizedImageList(self, idx=None):
         ret = []
-        files = glob.glob(self.GetResizedImagesDir() + '*')
+        files = sorted(glob.glob(self.GetResizedImagesDir() + '*'))
         for f in files:
             if idx is not None:
                 origFiles = sorted(self.GetExtractedImageList())
@@ -1622,7 +1624,7 @@ class AnimatedGif:
 
     def ResizedImagesExist(self):
         count = 0
-        files = glob.glob(self.GetResizedImagesDir() + '*')
+        files = sorted(glob.glob(self.GetResizedImagesDir() + '*'))
         for f in files:
             count = count + 1
 
@@ -1632,7 +1634,7 @@ class AnimatedGif:
             return False
 
     def DeleteResizedImages(self):
-        files = glob.glob(self.resizeDir + os.sep + '*')
+        files = sorted(glob.glob(self.resizeDir + os.sep + '*'))
         for f in files:
             try:
                 os.remove(f)
@@ -1645,7 +1647,7 @@ class AnimatedGif:
     def GetExtractedImagesLastModifiedTs(self):
         if self.ExtractedImagesExist():
             largestTimestamp = os.stat(self.GetExtractedImagesDir()).st_mtime
-            files            = glob.glob(self.GetExtractedImagesDir() + '*')
+            files            = sorted(glob.glob(self.GetExtractedImagesDir() + '*'))
 
             for f in files:
                 if os.path.exists(f) and os.stat(f).st_mtime > largestTimestamp:
@@ -1656,7 +1658,7 @@ class AnimatedGif:
 
     def ExtractedImagesExist(self):
         count = 0
-        files = glob.glob(self.GetExtractedImagesDir() + '*')
+        files = sorted(glob.glob(self.GetExtractedImagesDir() + '*'))
         for f in files:
             count = count + 1
 
@@ -1670,13 +1672,13 @@ class AnimatedGif:
 
     def GetExtractedImageList(self):
         ret = []
-        files = glob.glob(self.GetExtractedImagesDir() + '*')
+        files = sorted(glob.glob(self.GetExtractedImagesDir() + '*'))
         for f in files:
             ret.append(f)
         return ret
 
     def DeleteExtractedImages(self):
-        files = glob.glob(self.GetExtractedImagesDir() + '*')
+        files = sorted(glob.glob(self.GetExtractedImagesDir() + '*'))
         for f in files:
             try:
                 os.remove(f)
@@ -1690,7 +1692,11 @@ class AnimatedGif:
 
     def GetProcessedImageList(self):
         ret = []
-        files = glob.glob(self.GetProcessedImagesDir() + '*.' + self.GetIntermediaryFrameFormat())
+        files = sorted(
+            glob.glob(
+                self.GetProcessedImagesDir() +
+                '*.' +
+                self.GetIntermediaryFrameFormat()))
         for f in files:
             ret.append(f)
         return ret
@@ -1702,7 +1708,7 @@ class AnimatedGif:
             except:
                 pass
 
-        files = glob.glob(self.GetProcessedImagesDir() + '*')
+        files = sorted(glob.glob(self.GetProcessedImagesDir() + '*'))
 
         for f in files:
             try:
@@ -1715,7 +1721,7 @@ class AnimatedGif:
         return self.captureDir + os.sep
 
     def DeleteCapturedImages(self):
-        files = glob.glob(self.GetCapturedImagesDir() + '*')
+        files = sorted(glob.glob(self.GetCapturedImagesDir() + '*'))
         for f in files:
             os.remove(f)
 
@@ -1779,14 +1785,14 @@ class AnimatedGif:
 
 
     def DeleteMaskImages(self):
-        files = glob.glob(self.maskDir + os.sep + '*')
+        files = sorted(glob.glob(self.maskDir + os.sep + '*'))
         for f in files:
             os.remove(f)
 
 
     def CopyFramesToResizeFolder(self):
         # Copy extracted images over again
-        files = glob.glob(self.frameDir + os.sep + '*')
+        files = sorted(glob.glob(self.frameDir + os.sep + '*'))
         for f in files:
             self.callback(False)
             shutil.copy(f, self.resizeDir)
@@ -1794,7 +1800,7 @@ class AnimatedGif:
 
     def CopyFramesToProcessedFolder(self):
         # Copy extracted images over again
-        files = glob.glob(self.resizeDir + os.sep + '*')
+        files = sorted(glob.glob(self.resizeDir + os.sep + '*'))
         for f in files:
             shutil.copy(f, self.processedDir)
 
@@ -2416,7 +2422,7 @@ class AnimatedGif:
 
 
     def CropAndResize(self, argFrameIdx=None):
-        files = glob.glob(self.frameDir + os.sep + '*.png')
+        files = sorted(glob.glob(self.frameDir + os.sep + '*.png'))
         files.sort()
 
         origWidth  = self.GetVideoWidth()
@@ -2506,7 +2512,7 @@ class AnimatedGif:
         else:
             genPreview = False
             logging.info("Processing frames")
-            files = glob.glob(self.resizeDir + os.sep + '*.png')
+            files = sorted(glob.glob(self.resizeDir + os.sep + '*.png'))
             self.DeleteProcessedImages()
             frameIdx = 1
 

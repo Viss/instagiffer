@@ -228,21 +228,21 @@ def norecurse(func):
 
 def DurationStrToMillisec(str, throwParseError=False):
     logging.info('DurationStrToMillisec: input=%s', str)
-    try:
-        return float(str) * 1000
-    except ValueError:
-        pass
+    vidlen = 0
     if str is not None:
-        r = re.compile('[^\d]+')
-        tokens = r.split(str)
-        if len(tokens) == 4:
-            vidLen = (int(tokens[0]) * 3600 +
-                      int(tokens[1]) * 60 +
-                      int(tokens[2]) * 1000 +
-                      int(tokens[3]))
-        else:
-            vidLen = 0
-        return vidLen
+        r = re.compile(r'(((?P<hours>\d{1,2}):)?((?P<minutes>\d{1,2}):))?'
+                       r'((?P<seconds>\d+))(\.(?P<millis>\d+))?')
+        match = r.match(str)
+        if match:
+            vidlen = 0
+            if match.group('hours'):
+                vidlen += int(match.group('hours')) * 3600 * 1000
+            if match.group('minutes'):
+                vidlen += int(match.group('minutes')) * 60 * 1000
+            vidlen += int(match.group('seconds')) * 1000
+            if match.group('millis'):
+                vidlen += int(match.group('millis'))
+    return vidlen
 
 
 def DurationStrToSec(durationStr):
@@ -1560,7 +1560,7 @@ class AnimatedGif:
         try:
             duration = gifferlib.ffprobe(
                 ffprobe_bin, media_path,
-                'duration').pop()
+                'format=duration').pop()
             if self.videoPath:
                 self.videoLength = duration
         except gifferlib.FFProbeError:
@@ -2016,7 +2016,9 @@ class AnimatedGif:
 
             # Grab the previous second. This is where the error is found
             if self.conf.GetParamBool('settings', 'fixSlowdownGlitch'):
+                logging.info('startTimeStr: %s', startTimeStr)
                 startTimeMs = DurationStrToMillisec(startTimeStr)
+                logging.info('startTimeMs: %s', startTimeMs)
 
                 if startTimeMs > 2000:
                     startTimeMs  = startTimeMs - 2000
@@ -2625,7 +2627,9 @@ class AnimatedGif:
                 elif sharpAmount >= 30:
                     ditherIdx = 1
 
-                ditherType = [ "-ordered-dither checks,20", "-dither Riemersma", "-dither FloydSteinberg" ]
+                ditherType = ["-ordered-dither checks,20",
+                              "-dither Riemersma",
+                              "-dither FloydSteinberg" ]
 
                 cmdProcImage += '-sharpen %d %s ' % (scaledVal, ditherType[ditherIdx])
             else:

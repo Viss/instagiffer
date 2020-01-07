@@ -2411,7 +2411,7 @@ class AnimatedGif:
             captionTweakX[0]=-1
 
         if fontOutlineThickness >= 1:
-            cmdProcImage += " -stroke %s -strokewidth %d -annotate %+d%+d \"%s\" %s "  % (fontOuterColor, fontOutlineThickness, positionAdjX+captionTweakX[0], positionAdjY+captionTweakY[0], captionText, outlineBlur)
+            cmdProcImage += " -stroke %s -strokewidth %d -annotate %+d%+d \"%s\" %s "  % (fontOuterColor, fontOutlineThickness, positionAdjX+captionTweakX[1], positionAdjY+captionTweakY[0], captionText, outlineBlur)
             cmdProcImage += " -stroke %s -strokewidth %d -annotate %+d%+d \"%s\" %s "  % (fontOuterColor, fontOutlineThickness, positionAdjX+captionTweakX[1], positionAdjY+captionTweakY[1], captionText, outlineBlur)
 
         cmdProcImage += " -stroke none  -strokewidth %d -fill %s -annotate %+d%+d \"%s\" %s " % (fontOutlineThickness, fontColor, positionAdjX, positionAdjY, captionText, fontBlur)

@@ -21,7 +21,7 @@ The following prerequisites are required to do a Windows build:
  * Sublime Text 3 (Preferred editor, optional)
    * Package Control
  * Inno Setup (Latest)
- * Python (2.7.12)
+ * Python (2.7.12 32bit)
  * Github Client (Latest)
  * Pillow 3.4.2
  * cx_Freeze (4.3.x) - don't use version 5!

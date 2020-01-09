@@ -1542,7 +1542,7 @@ class AnimatedGif:
             if rSar != 1.0 and rDar != rSar:
                 msg = "Storage aspect ratio (%.2f) differs from display aspect ratio (%.2f)"
                 logging.info(msg, rSar, rDar)
-                self.videoWidth = self.videoHeight * rDar
+                self.videoWidth = int(self.videoHeight) * rDar
         except (gifferlib.FFProbeError, ValueError):
             logging.info('No aspect ratio information')
 
